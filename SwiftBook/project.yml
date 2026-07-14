@@ -1,0 +1,36 @@
+name: SwiftBook
+options:
+  bundleIdPrefix: com.swiftbook
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "14.0"
+
+settings:
+  base:
+    GENERATE_INFOPLIST_FILE: YES
+    INFOPLIST_FILE: Sources/Resources/Info.plist
+    DEVELOPMENT_TEAM: ""
+
+targets:
+  SwiftBook:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+        type: group
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.swiftbook.reader
+        INFOPLIST_FILE: Sources/Resources/Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTED_PLATFORMS: iphoneos iphonesimulator
+        SWIFT_VERSION: "5.9"
+    preBuildScripts:
+      - name: "SwiftLint"
+        script: |
+          if which swiftlint > /dev/null; then
+            swiftlint
+          fi
+        basedOnDependencyAnalysis: false
+        inputFiles: []
+        outputFiles: []

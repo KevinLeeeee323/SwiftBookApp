@@ -1,0 +1,928 @@
+import SwiftUI
+import WebKit
+import AVFoundation
+
+// MARK: - Reader View
+struct ReaderView: View {
+    @EnvironmentObject var bookManager: BookManager
+    @Environment(\.dismiss) private var dismiss
+
+    let book: Book
+
+    @State private var currentPage: Int
+    @State private var totalPages: Int
+    @State private var showControls = false
+    @State private var showSettings = false
+    @State private var chapterTitle = ""
+
+    @StateObject private var settings = ReadingSettingsStore()
+    @StateObject private var volumeHandler = VolumeButtonHandler()
+
+    init(book: Book) {
+        self.book = book
+        // Seed the reading position from the persisted value up front, so there is
+        // never a 0 -> savedPage transition that could post/save page 0 and wipe
+        // the stored progress.
+        _currentPage = State(initialValue: max(0, book.currentPage))
+        _totalPages = State(initialValue: max(book.totalPages, 1))
+    }
+
+    var body: some View {
+        ZStack {
+            // Reading content
+            readingContent
+
+            // Top/bottom controls overlay
+            if showControls && !showSettings {
+                controlsOverlay
+            }
+
+            // Settings panel
+            if showSettings {
+                settingsPanelOverlay
+            }
+        }
+        .onAppear {
+            setupVolumeButtons()
+        }
+        .onDisappear {
+            volumeHandler.stop()
+            saveProgress()
+        }
+        .onChange(of: currentPage) { _ in
+            saveProgress()
+        }
+        .onChange(of: settings.settings.enableVolumeButtons) { enabled in
+            if enabled {
+                setupVolumeButtons()
+            } else {
+                volumeHandler.stop()
+            }
+        }
+        .preferredColorScheme(colorSchemeForTheme)
+        .statusBarHidden(!showControls)
+        .animation(.easeInOut(duration: 0.25), value: showControls)
+        .animation(.easeInOut(duration: 0.3), value: showSettings)
+    }
+
+    // MARK: - Reading Content (WKWebView)
+    private var readingContent: some View {
+        GeometryReader { geometry in
+            BookWebView(
+                book: book,
+                settings: settings.settings,
+                currentPage: $currentPage,
+                totalPages: $totalPages,
+                chapterTitle: $chapterTitle,
+                viewportSize: geometry.size
+            )
+            // A single transparent layer over the WebView captures BOTH taps
+            // (left/center/right zones) and horizontal swipes. Using one gesture
+            // avoids the tap-vs-drag arena conflict that made swiping unreliable.
+            .overlay {
+                if !showControls && !showSettings {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 0)
+                                .onEnded { value in
+                                    handleReadingGesture(value, width: geometry.size.width)
+                                }
+                        )
+                }
+            }
+        }
+        // Keep the WebView pinned to the WHOLE screen at all times. Previously the
+        // ignored safe-area edges were toggled with `showControls`, so every time
+        // the controls appeared/disappeared the WebView resized (full-screen <->
+        // safe-area inset). That resize forced a CSS re-layout (resize ->
+        // recalculatePages), which made the page jump vertically ("上下抽动") and
+        // shifted the text when paging via the slider. A constant frame => the
+        // geometry never changes => no reflow, so page turns stay purely horizontal.
+        .ignoresSafeArea()
+    }
+
+    // MARK: - Reading gesture (unified tap + swipe)
+    /// Interprets a touch on the reading area: a horizontal drag turns the page,
+    /// a tap on the left/right third turns the page, and a tap in the middle
+    /// reveals the controls.
+    private func handleReadingGesture(_ value: DragGesture.Value, width: CGFloat) {
+        let dx = value.translation.width
+        let dy = value.translation.height
+
+        // Horizontal swipe (must be clearly horizontal, not a vertical scroll)
+        if abs(dx) > 45 && abs(dx) > abs(dy) * 1.4 {
+            if dx < 0 { nextPage() } else { previousPage() }
+            return
+        }
+
+        // Otherwise treat a near-stationary touch as a tap on a zone.
+        if abs(dx) < 16 && abs(dy) < 16 {
+            let x = value.startLocation.x
+            if x < width * 0.28 {
+                previousPage()
+            } else if x > width * 0.72 {
+                nextPage()
+            } else {
+                withAnimation { showControls = true }
+            }
+        }
+    }
+
+    // MARK: - Controls Overlay
+    private var controlsOverlay: some View {
+        ZStack {
+            // Full-screen tap catcher: a single tap anywhere in the middle hides
+            // the controls, so the user can immediately tap-to-turn again.
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation { showControls = false }
+                }
+
+            VStack(spacing: 0) {
+                // Top bar
+                topBar
+
+                Spacer()
+
+                // Bottom bar
+                bottomBar
+            }
+        }
+        .transition(.opacity)
+    }
+
+    // MARK: - Top Bar
+    private var topBar: some View {
+        HStack {
+            Button {
+                dismiss()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left")
+                        .font(.body.weight(.semibold))
+                    Text("书库")
+                        .font(.body)
+                }
+                .foregroundColor(settings.settings.theme.accentColor)
+            }
+
+            Spacer()
+
+            VStack(spacing: 2) {
+                Text(chapterTitle.isEmpty ? book.title : chapterTitle)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(1)
+                    .foregroundColor(Color(hex: settings.settings.theme.textColor).opacity(0.8))
+
+                if totalPages > 1 {
+                    Text("\(currentPage + 1) / \(totalPages)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+
+            Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    showSettings = true
+                }
+            } label: {
+                Image(systemName: "textformat.size")
+                    .font(.body.weight(.semibold))
+                    .foregroundColor(settings.settings.theme.accentColor)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 48)
+        .padding(.bottom, 12)
+        .background(.regularMaterial)
+        .background(.shadow(.drop(color: .black.opacity(0.06), radius: 4, y: 2)))
+    }
+
+    // MARK: - Bottom Bar
+    private var bottomBar: some View {
+        HStack(spacing: 0) {
+            // Page slider
+            if totalPages > 1 {
+                HStack(spacing: 10) {
+                    Text("\(currentPage + 1)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(.secondary)
+                        .frame(width: 28)
+
+                    Slider(
+                        value: Binding(
+                            get: { Double(currentPage) },
+                            set: { currentPage = Int($0) }
+                        ),
+                        in: 0...Double(max(0, totalPages - 1)),
+                        step: 1
+                    )
+                    .tint(settings.settings.theme.accentColor)
+
+                    Text("\(totalPages)")
+                        .font(.caption.monospacedDigit())
+                        .foregroundColor(.secondary)
+                        .frame(width: 28)
+                }
+                .padding(.horizontal, 8)
+            }
+
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 14)
+        .padding(.bottom, 24)
+        .background(.regularMaterial)
+        .background(.shadow(.drop(color: .black.opacity(0.06), radius: 4, y: -2)))
+    }
+
+    // MARK: - Settings Panel Overlay
+    private var settingsPanelOverlay: some View {
+        SettingsPanelView(
+            settings: $settings.settings,
+            isPresented: $showSettings,
+            isControlsShown: $showControls
+        )
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .zIndex(2)
+    }
+
+    // MARK: - Page Navigation
+    private func nextPage() {
+        guard currentPage < totalPages - 1 else { return }
+        currentPage += 1
+        notifyWebViewPageChange()
+        if !showControls {
+            // Brief haptic
+            let impact = UIImpactFeedbackGenerator(style: .light)
+            impact.impactOccurred()
+        }
+    }
+
+    private func previousPage() {
+        guard currentPage > 0 else { return }
+        currentPage -= 1
+        notifyWebViewPageChange()
+        if !showControls {
+            let impact = UIImpactFeedbackGenerator(style: .light)
+            impact.impactOccurred()
+        }
+    }
+
+    private func notifyWebViewPageChange() {
+        NotificationCenter.default.post(
+            name: .goToPage,
+            object: nil,
+            userInfo: ["page": currentPage]
+        )
+    }
+
+    // MARK: - Volume Buttons
+    private func setupVolumeButtons() {
+        guard settings.settings.enableVolumeButtons else { return }
+        volumeHandler.onVolumeUp = { nextPage() }
+        volumeHandler.onVolumeDown = { previousPage() }
+        volumeHandler.start()
+    }
+
+    // MARK: - Progress
+    private func saveProgress() {
+        bookManager.updateProgress(
+            bookId: book.id,
+            page: currentPage,
+            totalPages: totalPages
+        )
+    }
+
+    // MARK: - Theme color scheme
+    private var colorSchemeForTheme: ColorScheme? {
+        switch settings.settings.theme {
+        case .dark: return .dark
+        default:    return .light
+        }
+    }
+}
+
+// MARK: - Notification for page navigation
+extension Notification.Name {
+    static let goToPage = Notification.Name("goToPage")
+    static let updateSettings = Notification.Name("updateSettings")
+}
+
+// MARK: - Reading Settings Store (ObservableObject wrapper)
+final class ReadingSettingsStore: ObservableObject {
+    @Published var settings: ReadingSettings {
+        didSet { save() }
+    }
+
+    private let defaultsKey = "reading_settings"
+
+    init() {
+        if let data = UserDefaults.standard.data(forKey: defaultsKey),
+           let decoded = try? JSONDecoder().decode(ReadingSettings.self, from: data) {
+            self.settings = decoded
+        } else {
+            self.settings = ReadingSettings()
+        }
+    }
+
+    private func save() {
+        if let data = try? JSONEncoder().encode(settings) {
+            UserDefaults.standard.set(data, forKey: defaultsKey)
+        }
+    }
+}
+
+// MARK: - BookWebView (UIViewRepresentable)
+struct BookWebView: UIViewRepresentable {
+    let book: Book
+    let settings: ReadingSettings
+    @Binding var currentPage: Int
+    @Binding var totalPages: Int
+    @Binding var chapterTitle: String
+    let viewportSize: CGSize
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let preferences = WKWebpagePreferences()
+        preferences.allowsContentJavaScript = true
+
+        let config = WKWebViewConfiguration()
+        config.defaultWebpagePreferences = preferences
+        config.suppressesIncrementalRendering = false
+
+        // Disable zooming but allow scroll
+        let source = """
+        var meta = document.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+        document.head.appendChild(meta);
+        """
+        let script = WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
+        config.userContentController.addUserScript(script)
+        config.userContentController.add(context.coordinator, name: "pageHandler")
+
+        let webView = WKWebView(frame: .zero, configuration: config)
+        webView.navigationDelegate = context.coordinator
+        // Pagination is driven entirely by JS (container.scrollLeft); disable the
+        // native scroll view so it doesn't bounce/interfere with the tap zones.
+        webView.scrollView.isScrollEnabled = false
+        webView.scrollView.isPagingEnabled = false
+        webView.scrollView.bounces = false
+        webView.scrollView.alwaysBounceHorizontal = false
+        webView.scrollView.alwaysBounceVertical = false
+        webView.scrollView.showsHorizontalScrollIndicator = false
+        webView.scrollView.showsVerticalScrollIndicator = false
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
+
+        // Disable selection for cleaner reading
+        webView.configuration.preferences.isTextInteractionEnabled = true
+
+        // Prevent system gestures from interfering
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+
+        return webView
+    }
+
+    func updateUIView(_ webView: WKWebView, context: Context) {
+        // Load content on first render
+        if context.coordinator.isContentLoaded == false {
+            context.coordinator.loadContent(into: webView, book: book, settings: settings, viewportSize: viewportSize)
+            context.coordinator.lastSettings = settings
+        }
+
+        // Detect settings changes and apply
+        if context.coordinator.isContentLoaded && context.coordinator.lastSettings != settings {
+            context.coordinator.lastSettings = settings
+            applySettings(to: webView)
+        }
+
+        // Handle page change. currentPage is seeded from book.currentPage at init
+        // and pendingPage from book.currentPage in loadContent, so they start equal
+        // and a spurious goToPage never fires before the content is ready.
+        if context.coordinator.pendingPage != currentPage {
+            context.coordinator.pendingPage = currentPage
+            goToPage(currentPage, in: webView)
+        }
+
+        // Store latest bindings
+        context.coordinator.currentPageBinding = _currentPage
+        context.coordinator.totalPagesBinding = _totalPages
+        context.coordinator.chapterTitleBinding = _chapterTitle
+        context.coordinator.parent = self
+    }
+
+    private func goToPage(_ page: Int, in webView: WKWebView) {
+        let js = "goToPage(\(page));"
+        webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    private func applySettings(to webView: WKWebView) {
+        // Build a flat JS-friendly settings object (avoid enum/nested encoding issues)
+        let dict: [String: Any] = [
+            "fontSize": settings.fontSize,
+            "fontFamilyCSS": settings.fontFamily.cssName,
+            "bgColor": settings.theme.bgColor,
+            "textColor": settings.theme.textColor,
+            "lineSpacing": settings.lineSpacing,
+            "textAlign": settings.textAlignment.cssValue,
+            "marginH": settings.marginHorizontal,
+            "marginV": settings.marginVertical,
+            "paraSpacing": settings.paragraphSpacing,
+        ]
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: dict),
+              let jsonStr = String(data: jsonData, encoding: .utf8) else { return }
+        let escaped = jsonStr.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "'", with: "\\'")
+        let js = "applySettings('\(escaped)');"
+        webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+
+    // MARK: - Coordinator
+    class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
+        var parent: BookWebView
+        var isContentLoaded = false
+        var lastSettings: ReadingSettings?
+        var pendingPage: Int = 0
+
+        var currentPageBinding: Binding<Int>?
+        var totalPagesBinding: Binding<Int>?
+        var chapterTitleBinding: Binding<String>?
+
+        init(_ parent: BookWebView) {
+            self.parent = parent
+        }
+
+        // MARK: - Load Content
+        func loadContent(into webView: WKWebView, book: Book, settings: ReadingSettings, viewportSize: CGSize) {
+            let contentDir = getContentDirectory(book: book)
+            var htmlChunks: [String] = []
+
+            // All extracted resource files (images/css) live flattened in contentDir.
+            // We map each chapter's <img src="..."> to the actual extracted filename.
+            let availableFiles = (try? FileManager.default.contentsOfDirectory(atPath: contentDir.path)) ?? []
+
+            for (index, href) in book.spine.enumerated() {
+                let fileName = href.replacingOccurrences(of: "/", with: "_")
+                let fileURL = contentDir.appendingPathComponent(fileName)
+
+                guard let htmlData = try? Data(contentsOf: fileURL) else { continue }
+
+                // Try common encodings for EPUB (UTF-8 then UTF-16, Latin-1)
+                let encodings: [String.Encoding] = [.utf8, .utf16, .isoLatin1, .windowsCP1252]
+                var htmlStr: String?
+                for enc in encodings {
+                    if let str = String(data: htmlData, encoding: enc) {
+                        htmlStr = str
+                        break
+                    }
+                }
+
+                if var content = htmlStr {
+                    // Extract body content, strip scripts
+                    content = extractBodyContent(content)
+
+                    // Point image references at the extracted (flattened) files.
+                    content = rewriteResourceRefs(content, availableFiles: availableFiles)
+
+                    // Wrap in a div with an ID for page detection
+                    htmlChunks.append("<div id='chunk_\(index)' class='content-chunk'>\(content)</div>")
+                }
+            }
+
+            let fullHTML = buildReaderHTML(
+                content: htmlChunks.joined(separator: "\n"),
+                settings: settings,
+                title: book.title,
+                chapterTitle: chapterTitleForCurrentChunk(book: book, index: 0),
+                viewportSize: viewportSize,
+                initialPage: book.currentPage
+            )
+
+            isContentLoaded = true
+            // Seed the pending page from the book's persisted position (authoritative),
+            // not from the binding, which may still be 0 before onAppear runs.
+            pendingPage = book.currentPage
+
+            // Write the generated HTML into the content directory and load it as a
+            // file URL. Unlike loadHTMLString(baseURL:), loadFileURL(allowingReadAccessTo:)
+            // actually grants the WebView read access to the folder, so local images load.
+            let htmlURL = contentDir.appendingPathComponent("_reader_generated.html")
+            do {
+                try fullHTML.data(using: .utf8)?.write(to: htmlURL)
+                webView.loadFileURL(htmlURL, allowingReadAccessTo: contentDir)
+            } catch {
+                // Fallback: inline load (images may not resolve, but text will).
+                webView.loadHTMLString(fullHTML, baseURL: contentDir)
+            }
+        }
+
+        /// Rewrites `<img src>` / SVG `<image xlink:href>` paths so they point at the
+        /// flattened resource files that were extracted into the content directory.
+        /// Matching tries the flattened full path first, then the file basename, which
+        /// is robust to the EPUB's original directory layout and the `/`→`_`
+        /// flattening used at extraction time.
+        private func rewriteResourceRefs(_ html: String, availableFiles: [String]) -> String {
+            guard !availableFiles.isEmpty else { return html }
+
+            var byFullName: [String: String] = [:]     // "oebps_images_foo.png" -> actual
+            var byBasename: [String: String] = [:]      // "foo.png" -> actual
+            for f in availableFiles {
+                byFullName[f.lowercased()] = f
+                let logicalBase = (f.split(separator: "_").last.map(String.init) ?? f).lowercased()
+                byBasename[logicalBase] = f
+            }
+
+            func map(_ value: String) -> String? {
+                // Flatten the reference the same way extraction did.
+                var v = value.replacingOccurrences(of: "./", with: "")
+                while v.hasPrefix("../") { v.removeFirst(3) }
+                let flattened = v.replacingOccurrences(of: "/", with: "_").lowercased()
+                if let hit = byFullName[flattened] { return hit }
+
+                let base = (value as NSString).lastPathComponent.lowercased()
+                if let hit = byFullName[base] { return hit }          // resource at root
+                if let hit = byBasename[base] { return hit }          // logical basename
+                // Suffix fallback: an extracted "dir_dir_base" ends with "_base".
+                return availableFiles.first { $0.lowercased().hasSuffix("_" + base) }
+            }
+
+            let pattern = #"(xlink:href|src|href)\s*=\s*(["'])([^"'>]*\.(?:png|jpe?g|gif|svg|webp|bmp))\2"#
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else {
+                return html
+            }
+
+            let ns = html as NSString
+            var result = ""
+            var cursor = 0
+            for m in regex.matches(in: html, range: NSRange(location: 0, length: ns.length)) {
+                let attr = ns.substring(with: m.range(at: 1))
+                let quote = ns.substring(with: m.range(at: 2))
+                let value = ns.substring(with: m.range(at: 3))
+
+                result += ns.substring(with: NSRange(location: cursor, length: m.range.location - cursor))
+                if let mapped = map(value) {
+                    result += "\(attr)=\(quote)\(mapped)\(quote)"
+                } else {
+                    result += ns.substring(with: m.range)   // no match — leave as-is
+                }
+                cursor = m.range.location + m.range.length
+            }
+            result += ns.substring(with: NSRange(location: cursor, length: ns.length - cursor))
+            return result
+        }
+
+        private func getContentDirectory(book: Book) -> URL {
+            let fileManager = FileManager.default
+            let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            return docs.appendingPathComponent("Extracted/\(book.filePath)")
+        }
+
+        private func extractBodyContent(_ html: String) -> String {
+            var content = html
+
+            // Extract <body>…</body> content if present (XHTML/HTML documents)
+            if let bodyStart = content.range(of: "<body[^>]*>", options: [.regularExpression, .caseInsensitive]),
+               let bodyEnd = content.range(of: "</body>", options: .caseInsensitive) {
+                content = String(content[bodyStart.upperBound..<bodyEnd.lowerBound])
+            }
+
+            // Remove script tags
+            let scriptPattern = #"<script[^>]*>.*?</script>"#
+            if let regex = try? NSRegularExpression(
+                pattern: scriptPattern,
+                options: [.caseInsensitive, .dotMatchesLineSeparators]
+            ) {
+                let range = NSRange(content.startIndex..., in: content)
+                content = regex.stringByReplacingMatches(in: content, range: range, withTemplate: "")
+            }
+
+            return content
+        }
+
+        private func chapterTitleForCurrentChunk(book: Book, index: Int) -> String {
+            if index < book.chapters.count {
+                return book.chapters[index].title
+            }
+            return book.title
+        }
+
+        // MARK: - Build HTML
+        private func buildReaderHTML(content: String, settings: ReadingSettings, title: String, chapterTitle: String, viewportSize: CGSize, initialPage: Int) -> String {
+            let bgColor = settings.theme.bgColor
+            let textColor = settings.theme.textColor
+            let fontCSS = settings.fontFamily.cssName
+            let fontSize = settings.fontSize
+            let lineHeight = fontSize * settings.lineSpacing
+            let marginH = settings.marginHorizontal
+            let marginV = settings.marginVertical
+            let textAlign = settings.textAlignment.cssValue
+            let paraSpacing = settings.paragraphSpacing
+            let initialColWidth = max(1, viewportSize.width - marginH * 2)
+            let colGap = marginH * 2
+
+            // Build the defaults as a JSON object so values that contain quotes
+            // (e.g. the font-family CSS: ...'San Francisco'...) are safely escaped.
+            // Injecting these raw into single-quoted JS strings would break the
+            // entire <script> with a syntax error.
+            let defaultsDict: [String: Any] = [
+                "fontSize": fontSize,
+                "fontFamilyCSS": fontCSS,
+                "bgColor": bgColor,
+                "textColor": textColor,
+                "lineSpacing": settings.lineSpacing,
+                "textAlign": textAlign,
+                "marginH": marginH,
+                "marginV": marginV,
+                "paraSpacing": paraSpacing,
+            ]
+            let defaultsJSON = (try? JSONSerialization.data(withJSONObject: defaultsDict))
+                .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+
+            return """
+            <!DOCTYPE html>
+            <html>
+            <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+
+            html, body {
+                width: 100%;
+                height: 100%;
+                overflow: hidden;
+                background: \(bgColor);
+                color: \(textColor);
+                font-family: \(fontCSS);
+                font-size: \(fontSize)px;
+                line-height: \(lineHeight)px;
+                text-align: \(textAlign);
+                -webkit-text-size-adjust: 100%;
+                -webkit-tap-highlight-color: transparent;
+                -webkit-user-select: none;
+                user-select: none;
+            }
+
+            /* The paged container. box-sizing:border-box keeps the padding INSIDE
+               the viewport width, so each column == one screen exactly.
+               column-width and column-gap are refined in JS (measure()). */
+            #reader-container {
+                width: 100%;
+                height: 100%;
+                box-sizing: border-box;
+                padding: \(marginV)px \(marginH)px;
+                overflow: hidden;
+                column-width: \(initialColWidth)px;
+                column-gap: \(colGap)px;
+                column-fill: auto;
+                -webkit-column-width: \(initialColWidth)px;
+                -webkit-column-gap: \(colGap)px;
+                -webkit-column-fill: auto;
+            }
+
+            /* Each chapter starts on a fresh page (like Apple Books). */
+            .content-chunk {
+                break-before: column;
+                -webkit-column-break-before: always;
+            }
+            .content-chunk:first-child {
+                break-before: avoid;
+                -webkit-column-break-before: avoid;
+            }
+
+            p {
+                margin-bottom: \(paraSpacing)px;
+                text-indent: 2em;
+                orphans: 2;
+                widows: 2;
+            }
+
+            h1, h2, h3, h4, h5, h6 {
+                margin: 20px 0 12px 0;
+                font-weight: 700;
+                line-height: 1.3;
+                text-indent: 0;
+                text-align: left;
+                break-inside: avoid;
+                -webkit-column-break-inside: avoid;
+            }
+
+            h1 { font-size: 1.6em; }
+            h2 { font-size: 1.4em; }
+            h3 { font-size: 1.2em; }
+
+            img, svg {
+                max-width: 100%;
+                max-height: 85vh;
+                height: auto;
+                display: block;
+                margin: 12px auto;
+            }
+
+            blockquote {
+                margin: 16px 0;
+                padding: 8px 16px;
+                border-left: 3px solid \(textColor)44;
+                opacity: 0.85;
+            }
+
+            hr { margin: 20px 0; border: none; border-top: 1px solid \(textColor)22; }
+
+            a { color: \(textColor); text-decoration: underline; }
+            </style>
+            <script>
+            var DEFAULTS = \(defaultsJSON);
+            var currentPage = 0;
+            var totalPages = 1;
+            var pageStep = 1;
+
+            function readerContainer() {
+                return document.getElementById('reader-container');
+            }
+
+            // Measure the container and set column-width = content width and
+            // column-gap = combined side margins, so one page == container.clientWidth.
+            function measure() {
+                var c = readerContainer();
+                if (!c) return;
+                var cs = getComputedStyle(c);
+                var padL = parseFloat(cs.paddingLeft) || 0;
+                var padR = parseFloat(cs.paddingRight) || 0;
+                var contentWidth = c.clientWidth - padL - padR;
+                if (contentWidth < 1) { contentWidth = c.clientWidth; }
+                c.style.columnWidth = contentWidth + 'px';
+                c.style.webkitColumnWidth = contentWidth + 'px';
+                c.style.columnGap = (padL + padR) + 'px';
+                c.style.webkitColumnGap = (padL + padR) + 'px';
+                pageStep = c.clientWidth;
+                if (pageStep < 1) { pageStep = 1; }
+                var sw = c.scrollWidth; // forces synchronous reflow
+                totalPages = Math.max(1, Math.round(sw / pageStep));
+                if (currentPage > totalPages - 1) { currentPage = totalPages - 1; }
+                if (currentPage < 0) { currentPage = 0; }
+            }
+
+            function applyScroll() {
+                var c = readerContainer();
+                if (!c) return;
+                c.scrollLeft = currentPage * pageStep;
+            }
+
+            function postPage() {
+                try {
+                    window.webkit.messageHandlers.pageHandler.postMessage({
+                        type: 'pageChange',
+                        currentPage: currentPage,
+                        totalPages: totalPages
+                    });
+                } catch (e) {}
+            }
+
+            function goToPage(pageNum) {
+                currentPage = Math.max(0, Math.min(pageNum, totalPages - 1));
+                applyScroll();
+                postPage();
+            }
+
+            function nextPage() { goToPage(currentPage + 1); }
+            function previousPage() { goToPage(currentPage - 1); }
+
+            function recalculatePages() {
+                measure();
+                applyScroll();
+                postPage();
+            }
+
+            function applySettings(settingsJSON) {
+                var s;
+                try { s = JSON.parse(settingsJSON); } catch (e) { return; }
+                var old = document.getElementById('reader-dynamic-styles');
+                if (old) { old.remove(); }
+                var style = document.createElement('style');
+                style.id = 'reader-dynamic-styles';
+                var fs = s.fontSize || DEFAULTS.fontSize;
+                var ls = s.lineSpacing || DEFAULTS.lineSpacing;
+                var mV = (s.marginV != null) ? s.marginV : DEFAULTS.marginV;
+                var mH = (s.marginH != null) ? s.marginH : DEFAULTS.marginH;
+                var pSpace = (s.paraSpacing != null) ? s.paraSpacing : DEFAULTS.paraSpacing;
+                style.textContent =
+                    'html, body {' +
+                    'background: ' + (s.bgColor || DEFAULTS.bgColor) + ';' +
+                    'color: ' + (s.textColor || DEFAULTS.textColor) + ';' +
+                    'font-family: ' + (s.fontFamilyCSS || DEFAULTS.fontFamilyCSS) + ';' +
+                    'font-size: ' + fs + 'px;' +
+                    'line-height: ' + (fs * ls) + 'px;' +
+                    'text-align: ' + (s.textAlign || DEFAULTS.textAlign) + ';' +
+                    '}' +
+                    '#reader-container {' +
+                    'padding: ' + mV + 'px ' + mH + 'px;' +
+                    '}' +
+                    'p { margin-bottom: ' + pSpace + 'px; }';
+                document.head.appendChild(style);
+                // Let layout settle across two frames, then re-paginate + restore page.
+                requestAnimationFrame(function() {
+                    requestAnimationFrame(function() {
+                        recalculatePages();
+                    });
+                });
+            }
+
+            function bookInit() {
+                measure();
+                currentPage = Math.max(0, Math.min(\(initialPage), totalPages - 1));
+                applyScroll();
+                postPage();
+            }
+
+            if (document.readyState === 'complete' || document.readyState === 'interactive') {
+                setTimeout(bookInit, 0);
+            } else {
+                window.addEventListener('load', bookInit);
+            }
+
+            window.addEventListener('resize', function() {
+                setTimeout(recalculatePages, 200);
+            });
+            </script>
+            </head>
+            <body>
+            <div id="reader-container">
+            \(content)
+            </div>
+            </body>
+            </html>
+            """
+        }
+
+
+        // MARK: - WKNavigationDelegate
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            // Re-paginate once the WebView reports load finished, then again a
+            // bit later to catch layout that settles after images/fonts resolve.
+            // recalculatePages() posts the page/total back via the message handler.
+            let recalc: () -> Void = { webView.evaluateJavaScript("recalculatePages();", completionHandler: nil) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: recalc)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: recalc)
+        }
+
+        // MARK: - WKScriptMessageHandler
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "pageHandler",
+                  let body = message.body as? [String: Any],
+                  let type = body["type"] as? String else { return }
+
+            if type == "pageChange" {
+                if let page = body["currentPage"] as? Int {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self = self else { return }
+                        self.pendingPage = page  // prevent double-navigation in updateUIView
+                        self.parent.currentPage = page
+                        self.currentPageBinding?.wrappedValue = page
+                    }
+                }
+                if let total = body["totalPages"] as? Int {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.parent.totalPages = total
+                        self?.totalPagesBinding?.wrappedValue = total
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Color Helper
+extension Color {
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 6:
+            (a, r, g, b) = (255, (int >> 16) & 0xFF, (int >> 8) & 0xFF, int & 0xFF)
+        case 8:
+            (a, r, g, b) = ((int >> 24) & 0xFF, (int >> 16) & 0xFF, (int >> 8) & 0xFF, int & 0xFF)
+        default:
+            (a, r, g, b) = (255, 0, 0, 0)
+        }
+        self.init(
+            .sRGB,
+            red: Double(r) / 255,
+            green: Double(g) / 255,
+            blue: Double(b) / 255,
+            opacity: Double(a) / 255
+        )
+    }
+}
