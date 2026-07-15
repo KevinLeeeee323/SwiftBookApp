@@ -128,8 +128,19 @@ final class VolumeButtonHandler: ObservableObject {
     }
 
     // MARK: - Hidden MPVolumeView
-    private func installHiddenVolumeView() {
-        guard volumeView == nil, let window = Self.activeWindow() else { return }
+    private func installHiddenVolumeView(retriesLeft: Int = 5) {
+        guard volumeView == nil else { return }
+        guard let window = Self.activeWindow() else {
+            // The key window may not be in the hierarchy yet (start() runs from
+            // onAppear). Without the MPVolumeView we get neither HUD suppression nor
+            // a UISlider to reset the baseline, so retry a few times before giving up.
+            guard retriesLeft > 0 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                guard let self = self, self.isRunning else { return }
+                self.installHiddenVolumeView(retriesLeft: retriesLeft - 1)
+            }
+            return
+        }
         // On-screen but effectively invisible: iOS only suppresses the volume HUD
         // when a real MPVolumeView is present inside the visible window hierarchy.
         let mpv = MPVolumeView(frame: CGRect(x: 0, y: 0, width: 1, height: 1))
@@ -138,6 +149,9 @@ final class VolumeButtonHandler: ObservableObject {
         mpv.clipsToBounds = true
         window.addSubview(mpv)
         volumeView = mpv
+        // Prime to a mid level now that the slider exists, so the first press in
+        // either direction produces a detectable change.
+        setSystemVolume(baseline)
     }
 
     // MARK: - Volume reset

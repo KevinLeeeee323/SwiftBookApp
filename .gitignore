@@ -1,7 +1,26 @@
 .claude/
+
+# macOS
 .DS_Store
-xcuserdata/
-*.xcuserstate
+
+# Xcode
+**/xcuserdata/
+**/*.xcuserstate
+
+# Build
 DerivedData/
 build/
+.build/
+
+# SwiftPM
 .swiftpm/
+
+# Xcode
+*.moved-aside
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+
+# VSCode
+.vscode/

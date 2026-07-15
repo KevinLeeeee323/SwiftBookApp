@@ -35,26 +35,57 @@ struct ReadingSettings: Equatable, Codable {
 }
 
 // MARK: - Font Family
+// NOTE: iOS ships essentially ONE Chinese font family — PingFang SC (苹方). Songti/
+// Kaiti SC are macOS-only fonts and are NOT present on iOS or the Simulator (verified
+// against the iOS 26.3 runtime font list), so offering them just falls back to PingFang
+// and looks identical. Every stack therefore ends in 'PingFang SC' before the generic,
+// so Chinese text always has a real glyph source and never renders as tofu boxes — even
+// when a Latin-only face (e.g. San Francisco) is chosen. To truly offer 宋体/楷体 like
+// Apple Books, an open-source CJK font (e.g. Noto Serif SC, OFL) would have to be bundled.
 enum FontFamily: String, CaseIterable, Codable {
-    case system       = "San Francisco"
-    case georgia      = "Georgia"
+    case system        = "San Francisco"
+    case pingfang      = "苹方"
+    case georgia       = "Georgia"
     case timesNewRoman = "Times New Roman"
-    case palatino     = "Palatino"
-    case helvetica    = "Helvetica"
-    case courier      = "Courier"
+    case palatino      = "Palatino"
+    case helvetica     = "Helvetica"
+    case courier       = "Courier"
 
     var cssName: String {
         switch self {
-        case .system:        return "-apple-system, BlinkMacSystemFont, 'San Francisco', sans-serif"
-        case .georgia:       return "'Georgia', serif"
-        case .timesNewRoman: return "'Times New Roman', Times, serif"
-        case .palatino:      return "'Palatino', 'Palatino Linotype', serif"
-        case .helvetica:     return "'Helvetica Neue', Helvetica, Arial, sans-serif"
-        case .courier:       return "'Courier New', Courier, monospace"
+        case .system:        return "-apple-system, 'PingFang SC', sans-serif"
+        case .pingfang:      return "'PingFang SC', sans-serif"
+        case .georgia:       return "Georgia, 'PingFang SC', serif"
+        case .timesNewRoman: return "'Times New Roman', 'PingFang SC', serif"
+        case .palatino:      return "Palatino, 'PingFang SC', serif"
+        case .helvetica:     return "'Helvetica Neue', Helvetica, 'PingFang SC', sans-serif"
+        case .courier:       return "'Courier New', Courier, 'PingFang SC', monospace"
         }
     }
 
     var displayName: String { rawValue }
+
+    /// Real iOS font family name for the SwiftUI picker chip preview.
+    var uiFontName: String {
+        switch self {
+        case .system:        return "PingFang SC"
+        case .pingfang:      return "PingFang SC"
+        case .georgia:       return "Georgia"
+        case .timesNewRoman: return "Times New Roman"
+        case .palatino:      return "Palatino"
+        case .helvetica:     return "Helvetica Neue"
+        case .courier:       return "Courier New"
+        }
+    }
+
+    /// Sample glyphs shown on the picker chip.
+    var sample: String {
+        switch self {
+        case .pingfang: return "字"
+        case .system:   return "字Aa"
+        default:        return "Aa"
+        }
+    }
 
     var isSerif: Bool {
         switch self {

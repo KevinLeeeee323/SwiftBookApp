@@ -174,8 +174,8 @@ struct SettingsPanelView: View {
                             withAnimation { settings.fontFamily = font }
                         } label: {
                             VStack(spacing: 6) {
-                                Text("Aa")
-                                    .font(.custom(font.displayName, size: 20))
+                                Text(font.sample)
+                                    .font(.custom(font.uiFontName, size: 20))
                                     .frame(width: 52, height: 52)
                                     .background(
                                         RoundedRectangle(cornerRadius: 12)

@@ -84,16 +84,45 @@ final class BookManager: ObservableObject {
                     let destName = href.replacingOccurrences(of: "/", with: "_")
                     let destFile = bookDir.appendingPathComponent(destName)
                     try entryData.write(to: destFile)
-                    extractedSpine.append(destName)
+                    // Store the RESOLVED path (not the flattened name): the reader flattens
+                    // it back to read the file AND uses its directory to resolve each
+                    // chapter's relative <img> refs exactly. (Older libraries stored the
+                    // flattened name — that still reads fine, it just falls back to
+                    // basename matching for images.)
+                    extractedSpine.append(href)
                 }
             }
 
-            // Extract CSS and images
+            // Extract CSS and images. Manifest hrefs are relative to the OPF file's
+            // directory (parsed.baseDir) and MUST be resolved before reading from the
+            // zip — otherwise, whenever the OPF isn't at the zip root (e.g.
+            // "OEBPS/content.opf"), the read silently fails and no images ever land on
+            // disk (that was the "images don't load" bug). Spine files already store
+            // resolved paths; resolving here makes the flattened image filenames line
+            // up with what rewriteResourceRefs looks up at read time.
             for (_, href) in parsed.manifest {
-                if let entryData = try? parsed.zip.read(filename: href) {
-                    let destName = href.replacingOccurrences(of: "/", with: "_")
+                let resolved = resolveHref(href, baseDir: parsed.baseDir)
+                guard let entryData = try? parsed.zip.read(filename: resolved) else { continue }
+                let destName = resolved.replacingOccurrences(of: "/", with: "_")
+                let destFile = bookDir.appendingPathComponent(destName)
+                try? entryData.write(to: destFile)
+            }
+
+            // Belt-and-suspenders: extract EVERY image entry straight from the zip,
+            // flattened by its full zip path. This guarantees images land on disk even
+            // if the manifest is incomplete or an href doesn't resolve, and the full-path
+            // flattened name matches how the reader resolves chapter refs.
+            let imageExts: Set<String> = ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp"]
+            if let allEntries = try? parsed.zip.centralDirectory() {
+                for entry in allEntries where !entry.isDirectory {
+                    let ext = (entry.filename as NSString).pathExtension.lowercased()
+                    guard imageExts.contains(ext) else { continue }
+                    let destName = entry.filename.replacingOccurrences(of: "/", with: "_")
                     let destFile = bookDir.appendingPathComponent(destName)
-                    try? entryData.write(to: destFile)
+                    guard !fileManager.fileExists(atPath: destFile.path) else { continue }
+                    if let data = try? parsed.zip.read(entry: entry) {
+                        try? data.write(to: destFile)
+                    }
                 }
             }
 
@@ -126,6 +155,23 @@ final class BookManager: ObservableObject {
         }
     }
 
+    // MARK: - Resolve manifest href → full zip path
+    /// Manifest hrefs are relative to the OPF directory (baseDir). This resolves them
+    /// into a full path within the zip, mirroring EPUBParser's spine resolution so the
+    /// flattened extracted filenames line up.
+    private func resolveHref(_ href: String, baseDir: String) -> String {
+        var h = href
+        if let frag = h.firstIndex(of: "#") { h = String(h[..<frag]) }  // drop #anchors
+        if h.hasPrefix("./") { h.removeFirst(2) }
+        if baseDir.isEmpty || baseDir == "." { return h }
+        var base = baseDir
+        while h.hasPrefix("../") {                       // walk up out of the OPF dir
+            h.removeFirst(3)
+            base = (base as NSString).deletingLastPathComponent
+        }
+        return base.isEmpty ? h : "\(base)/\(h)"
+    }
+
     // MARK: - Remove book
     func removeBook(_ book: Book) {
         // Remove extracted content
@@ -140,7 +186,6 @@ final class BookManager: ObservableObject {
         books.removeAll { $0.id == book.id }
         saveLibrary()
     }
-
     // MARK: - Update reading progress
     func updateProgress(bookId: UUID, page: Int, totalPages: Int) {
         guard let index = books.firstIndex(where: { $0.id == bookId }) else { return }

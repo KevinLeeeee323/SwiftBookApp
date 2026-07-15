@@ -363,7 +363,7 @@ struct BookWebView: UIViewRepresentable {
         let source = """
         var meta = document.createElement('meta');
         meta.name = 'viewport';
-        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no';
+        meta.content = 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover';
         document.head.appendChild(meta);
         """
         let script = WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
@@ -454,6 +454,7 @@ struct BookWebView: UIViewRepresentable {
         var isContentLoaded = false
         var lastSettings: ReadingSettings?
         var pendingPage: Int = 0
+        var imageInlineBudget = 0   // bytes left for base64-inlining images this load
 
         var currentPageBinding: Binding<Int>?
         var totalPagesBinding: Binding<Int>?
@@ -467,6 +468,7 @@ struct BookWebView: UIViewRepresentable {
         func loadContent(into webView: WKWebView, book: Book, settings: ReadingSettings, viewportSize: CGSize) {
             let contentDir = getContentDirectory(book: book)
             var htmlChunks: [String] = []
+            imageInlineBudget = 20_000_000   // inline up to ~20MB of images as data URIs
 
             // All extracted resource files (images/css) live flattened in contentDir.
             // We map each chapter's <img src="..."> to the actual extracted filename.
@@ -492,8 +494,11 @@ struct BookWebView: UIViewRepresentable {
                     // Extract body content, strip scripts
                     content = extractBodyContent(content)
 
-                    // Point image references at the extracted (flattened) files.
-                    content = rewriteResourceRefs(content, availableFiles: availableFiles)
+                    // Point image references at the extracted (flattened) files. Passing
+                    // the chapter's own directory lets refs like "../Images/x.png" resolve
+                    // to the exact flattened filename instead of being guessed by basename.
+                    let chapterDir = (href as NSString).deletingLastPathComponent
+                    content = rewriteResourceRefs(content, availableFiles: availableFiles, chapterDir: chapterDir, contentDir: contentDir)
 
                     // Wrap in a div with an ID for page detection
                     htmlChunks.append("<div id='chunk_\(index)' class='content-chunk'>\(content)</div>")
@@ -528,11 +533,11 @@ struct BookWebView: UIViewRepresentable {
         }
 
         /// Rewrites `<img src>` / SVG `<image xlink:href>` paths so they point at the
-        /// flattened resource files that were extracted into the content directory.
-        /// Matching tries the flattened full path first, then the file basename, which
-        /// is robust to the EPUB's original directory layout and the `/`→`_`
-        /// flattening used at extraction time.
-        private func rewriteResourceRefs(_ html: String, availableFiles: [String]) -> String {
+        /// flattened resource files extracted into the content directory. Refs are
+        /// resolved against `chapterDir` (the chapter's original folder) so a relative
+        /// path maps to the EXACT flattened filename; a series of looser fallbacks
+        /// (bare-flatten, basename, `_basename` suffix) keeps older libraries working.
+        private func rewriteResourceRefs(_ html: String, availableFiles: [String], chapterDir: String, contentDir: URL) -> String {
             guard !availableFiles.isEmpty else { return html }
 
             var byFullName: [String: String] = [:]     // "oebps_images_foo.png" -> actual
@@ -543,17 +548,37 @@ struct BookWebView: UIViewRepresentable {
                 byBasename[logicalBase] = f
             }
 
-            func map(_ value: String) -> String? {
-                // Flatten the reference the same way extraction did.
+            // Resolve a (possibly relative) ref against the chapter dir into the
+            // flattened full-path key, e.g. chapterDir "OEBPS/Text" + "../Images/x.png"
+            // -> "oebps_images_x.png".
+            func resolvedKey(_ ref: String) -> String {
+                var comps = chapterDir.isEmpty ? [] : chapterDir.split(separator: "/").map(String.init)
+                for part in ref.split(separator: "/").map(String.init) {
+                    if part == "." || part.isEmpty { continue }
+                    if part == ".." { if !comps.isEmpty { comps.removeLast() }; continue }
+                    comps.append(part)
+                }
+                return comps.joined(separator: "_").lowercased()
+            }
+
+            func map(_ rawValue: String) -> String? {
+                // Drop #fragment and percent-decode (files on disk are stored decoded).
+                var value = rawValue
+                if let h = value.firstIndex(of: "#") { value = String(value[..<h]) }
+                value = value.removingPercentEncoding ?? value
+
+                // 1. Exact: resolve against the chapter dir, match the full flattened path.
+                if let hit = byFullName[resolvedKey(value)] { return hit }
+
+                // 2. Flatten the ref alone (strip ./ and ../) and match the full path.
                 var v = value.replacingOccurrences(of: "./", with: "")
                 while v.hasPrefix("../") { v.removeFirst(3) }
-                let flattened = v.replacingOccurrences(of: "/", with: "_").lowercased()
-                if let hit = byFullName[flattened] { return hit }
+                if let hit = byFullName[v.replacingOccurrences(of: "/", with: "_").lowercased()] { return hit }
 
+                // 3. Basename fallbacks (last resort — can be ambiguous across folders).
                 let base = (value as NSString).lastPathComponent.lowercased()
                 if let hit = byFullName[base] { return hit }          // resource at root
                 if let hit = byBasename[base] { return hit }          // logical basename
-                // Suffix fallback: an extracted "dir_dir_base" ends with "_base".
                 return availableFiles.first { $0.lowercased().hasSuffix("_" + base) }
             }
 
@@ -572,7 +597,21 @@ struct BookWebView: UIViewRepresentable {
 
                 result += ns.substring(with: NSRange(location: cursor, length: m.range.location - cursor))
                 if let mapped = map(value) {
-                    result += "\(attr)=\(quote)\(mapped)\(quote)"
+                    // Inline the image as a base64 data URI. This makes rendering
+                    // independent of file-URL access scoping — once the file is on
+                    // disk it WILL display. Large images (or once the budget is spent)
+                    // fall back to a percent-encoded relative file reference.
+                    let fileURL = contentDir.appendingPathComponent(mapped)
+                    if imageInlineBudget > 0,
+                       let data = try? Data(contentsOf: fileURL),
+                       data.count <= 5_000_000 {
+                        imageInlineBudget -= data.count
+                        let ext = (mapped as NSString).pathExtension.lowercased()
+                        result += "\(attr)=\(quote)data:\(Self.mimeType(for: ext));base64,\(data.base64EncodedString())\(quote)"
+                    } else {
+                        let encoded = mapped.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? mapped
+                        result += "\(attr)=\(quote)\(encoded)\(quote)"
+                    }
                 } else {
                     result += ns.substring(with: m.range)   // no match — leave as-is
                 }
@@ -580,6 +619,19 @@ struct BookWebView: UIViewRepresentable {
             }
             result += ns.substring(with: NSRange(location: cursor, length: ns.length - cursor))
             return result
+        }
+
+        /// MIME type for a base64 image data URI.
+        private static func mimeType(for ext: String) -> String {
+            switch ext {
+            case "png":          return "image/png"
+            case "jpg", "jpeg":  return "image/jpeg"
+            case "gif":          return "image/gif"
+            case "svg":          return "image/svg+xml"
+            case "webp":         return "image/webp"
+            case "bmp":          return "image/bmp"
+            default:             return "application/octet-stream"
+            }
         }
 
         private func getContentDirectory(book: Book) -> URL {
@@ -654,7 +706,7 @@ struct BookWebView: UIViewRepresentable {
             <html>
             <head>
             <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
             <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -681,7 +733,16 @@ struct BookWebView: UIViewRepresentable {
                 width: 100%;
                 height: 100%;
                 box-sizing: border-box;
-                padding: \(marginV)px \(marginH)px;
+                /* Add the device safe-area insets on top of the reading margins so
+                   text clears the Dynamic Island / notch and the home indicator.
+                   viewport-fit=cover (in the viewport meta) makes env() available;
+                   these resolve to a constant px per orientation, so toggling the
+                   controls does NOT change them and the page never reflows. The
+                   reading background still fills edge-to-edge behind the island. */
+                padding-top: calc(\(marginV)px + env(safe-area-inset-top));
+                padding-right: calc(\(marginH)px + env(safe-area-inset-right));
+                padding-bottom: calc(\(marginV)px + env(safe-area-inset-bottom));
+                padding-left: calc(\(marginH)px + env(safe-area-inset-left));
                 overflow: hidden;
                 column-width: \(initialColWidth)px;
                 column-gap: \(colGap)px;
@@ -826,7 +887,10 @@ struct BookWebView: UIViewRepresentable {
                     'text-align: ' + (s.textAlign || DEFAULTS.textAlign) + ';' +
                     '}' +
                     '#reader-container {' +
-                    'padding: ' + mV + 'px ' + mH + 'px;' +
+                    'padding-top: calc(' + mV + 'px + env(safe-area-inset-top));' +
+                    'padding-right: calc(' + mH + 'px + env(safe-area-inset-right));' +
+                    'padding-bottom: calc(' + mV + 'px + env(safe-area-inset-bottom));' +
+                    'padding-left: calc(' + mH + 'px + env(safe-area-inset-left));' +
                     '}' +
                     'p { margin-bottom: ' + pSpace + 'px; }';
                 document.head.appendChild(style);

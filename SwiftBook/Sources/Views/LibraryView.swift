@@ -123,7 +123,12 @@ struct LibraryView: View {
                 Button {
                     navigationPath.append(book)
                 } label: {
+                    // Fold the reading position into the view identity so the card's
+                    // progress bar refreshes after open → read → close. `Book` is
+                    // Equatable on `id` only, so otherwise SwiftUI can consider the
+                    // updated book "unchanged" and skip re-rendering the card.
                     BookCardView(book: book)
+                        .id("\(book.id)-\(book.currentPage)-\(book.totalPages)")
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
