@@ -17,7 +17,7 @@ struct SettingsPanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Spacer()
+            // Spacer()
 
             VStack(spacing: 0) {
                 // Handle
@@ -86,12 +86,14 @@ struct SettingsPanelView: View {
                     .fill(.regularMaterial)
                     .shadow(color: .black.opacity(0.15), radius: 20, y: -6)
             )
-            .frame(maxHeight: UIScreen.main.bounds.height * 0.55)
+            .frame(maxHeight: UIScreen.main.bounds.height * 0.60)
         }
+        .frame(maxHeight: .infinity, alignment: .bottom)
         .background(Color.clear)
         .onTapGesture {
             withAnimation { isPresented = false }
         }
+        .ignoresSafeArea(.container, edges: .bottom)
         .onAppear {
             brightness = CGFloat(UIScreen.main.brightness)
         }
