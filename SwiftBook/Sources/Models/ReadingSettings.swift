@@ -31,7 +31,7 @@ struct ReadingSettings: Equatable, Codable {
 
     // Clamp font size
     static let minFontSize: CGFloat = 12
-    static let maxFontSize: CGFloat = 32
+    static let maxFontSize: CGFloat = 40
 }
 
 // MARK: - Font Family
@@ -105,7 +105,7 @@ enum ReadingTheme: String, CaseIterable, Codable {
     var bgColor: String {
         switch self {
         case .white: return "#FEFEFE"
-        case .sepia: return "#F5EFDF"
+        case .sepia: return "#F1E2C8"
         case .dark:  return "#1A1A1E"
         case .green: return "#E2EFDA"
         }

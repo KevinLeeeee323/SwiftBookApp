@@ -157,13 +157,15 @@ final class VolumeButtonHandler: ObservableObject {
     // MARK: - Volume reset
     private func resetToBaseline() {
         isAdjusting = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
-            guard let self = self, self.isRunning else { return }
-            self.setSystemVolume(self.baseline)
-            // Keep ignoring KVO briefly while the volume settles back.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) {
-                self.isAdjusting = false
-            }
+        // Reset immediately — every frame of delay between presses is noticeable
+        // when the user is tapping quickly. The 0.08 s lockout below is enough for
+        // the slider settle to propagate a single KVO fire.
+        setSystemVolume(baseline)
+        // Keep ignoring KVO briefly while the volume slider's mechanical settle
+        // might bounce — 0.08 s is tight enough for fast successive presses but
+        // long enough to suppress a false double-fire.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
+            self?.isAdjusting = false
         }
     }
 

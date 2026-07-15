@@ -285,8 +285,8 @@ struct ReaderView: View {
     // MARK: - Volume Buttons
     private func setupVolumeButtons() {
         guard settings.settings.enableVolumeButtons else { return }
-        volumeHandler.onVolumeUp = { nextPage() }
-        volumeHandler.onVolumeDown = { previousPage() }
+        volumeHandler.onVolumeUp = { previousPage() }
+        volumeHandler.onVolumeDown = { nextPage() }
         volumeHandler.start()
     }
 
@@ -739,7 +739,10 @@ struct BookWebView: UIViewRepresentable {
                    these resolve to a constant px per orientation, so toggling the
                    controls does NOT change them and the page never reflows. The
                    reading background still fills edge-to-edge behind the island. */
-                padding-top: calc(\(marginV)px + env(safe-area-inset-top));
+                /* Top: use the system safe-area inset directly — it already includes
+                   the Dynamic Island height + Apple's own clearance. Fall back to
+                   marginV on non-notch phones where env() resolves to 0. */
+                padding-top: env(safe-area-inset-top, \(marginV)px);
                 padding-right: calc(\(marginH)px + env(safe-area-inset-right));
                 padding-bottom: calc(\(marginV)px + env(safe-area-inset-bottom));
                 padding-left: calc(\(marginH)px + env(safe-area-inset-left));
@@ -887,7 +890,7 @@ struct BookWebView: UIViewRepresentable {
                     'text-align: ' + (s.textAlign || DEFAULTS.textAlign) + ';' +
                     '}' +
                     '#reader-container {' +
-                    'padding-top: calc(' + mV + 'px + env(safe-area-inset-top));' +
+                    'padding-top: env(safe-area-inset-top, ' + mV + 'px);' +
                     'padding-right: calc(' + mH + 'px + env(safe-area-inset-right));' +
                     'padding-bottom: calc(' + mV + 'px + env(safe-area-inset-bottom));' +
                     'padding-left: calc(' + mH + 'px + env(safe-area-inset-left));' +
