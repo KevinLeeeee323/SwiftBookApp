@@ -197,8 +197,8 @@ struct ReaderView: View {
             }
         }
         .padding(.horizontal, 20)
-        .padding(.top, 48)
-        .padding(.bottom, 12)
+        .padding(.top, 0)
+        .padding(.bottom, 0)
         .background(.regularMaterial)
         .background(.shadow(.drop(color: .black.opacity(0.06), radius: 4, y: 2)))
     }
@@ -208,11 +208,11 @@ struct ReaderView: View {
         HStack(spacing: 0) {
             // Page slider
             if totalPages > 1 {
-                HStack(spacing: 10) {
-                    Text("\(currentPage + 1)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundColor(.secondary)
-                        .frame(width: 28)
+                HStack(spacing: 0) {
+//                    Text("\(currentPage + 1)")
+//                        .font(.caption.monospacedDigit())
+//                        .foregroundColor(.secondary)
+//                        .frame(width: 28)
 
                     Slider(
                         value: Binding(
@@ -224,10 +224,10 @@ struct ReaderView: View {
                     )
                     .tint(settings.settings.theme.accentColor)
 
-                    Text("\(totalPages)")
-                        .font(.caption.monospacedDigit())
-                        .foregroundColor(.secondary)
-                        .frame(width: 28)
+//                    Text("\(totalPages)")
+//                        .font(.caption.monospacedDigit())
+//                        .foregroundColor(.secondary)
+//                        .frame(width: 28)
                 }
                 .padding(.horizontal, 8)
             }
@@ -235,8 +235,8 @@ struct ReaderView: View {
             Spacer()
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 14)
-        .padding(.bottom, 24)
+        .padding(.vertical, 6)
+//        .padding(.bottom, 12)
         .background(.regularMaterial)
         .background(.shadow(.drop(color: .black.opacity(0.06), radius: 4, y: -2)))
     }
@@ -739,10 +739,7 @@ struct BookWebView: UIViewRepresentable {
                    these resolve to a constant px per orientation, so toggling the
                    controls does NOT change them and the page never reflows. The
                    reading background still fills edge-to-edge behind the island. */
-                /* Top: use the system safe-area inset directly — it already includes
-                   the Dynamic Island height + Apple's own clearance. Fall back to
-                   marginV on non-notch phones where env() resolves to 0. */
-                padding-top: env(safe-area-inset-top, \(marginV)px);
+                padding-top: calc(\(marginV)px + env(safe-area-inset-top));
                 padding-right: calc(\(marginH)px + env(safe-area-inset-right));
                 padding-bottom: calc(\(marginV)px + env(safe-area-inset-bottom));
                 padding-left: calc(\(marginH)px + env(safe-area-inset-left));
@@ -890,7 +887,7 @@ struct BookWebView: UIViewRepresentable {
                     'text-align: ' + (s.textAlign || DEFAULTS.textAlign) + ';' +
                     '}' +
                     '#reader-container {' +
-                    'padding-top: env(safe-area-inset-top, ' + mV + 'px);' +
+                    'padding-top: calc(' + mV + 'px + env(safe-area-inset-top));' +
                     'padding-right: calc(' + mH + 'px + env(safe-area-inset-right));' +
                     'padding-bottom: calc(' + mV + 'px + env(safe-area-inset-bottom));' +
                     'padding-left: calc(' + mH + 'px + env(safe-area-inset-left));' +
