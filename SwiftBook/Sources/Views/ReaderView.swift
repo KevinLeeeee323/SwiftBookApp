@@ -2,6 +2,11 @@ import SwiftUI
 import WebKit
 import AVFoundation
 
+struct ChapterMetric {
+    var pageOffset: Int
+    var pageCount: Int
+}
+
 // MARK: - Reader View
 struct ReaderView: View {
     @EnvironmentObject var bookManager: BookManager
@@ -13,7 +18,10 @@ struct ReaderView: View {
     @State private var totalPages: Int
     @State private var showControls = false
     @State private var showSettings = false
+    @State private var showTOC = false
     @State private var chapterTitle = ""
+    @State private var chapters: [Chapter]
+    @State private var activeChapterIndex: Int?
 
     @StateObject private var settings = ReadingSettingsStore()
     @StateObject private var volumeHandler = VolumeButtonHandler()
@@ -25,6 +33,8 @@ struct ReaderView: View {
         // the stored progress.
         _currentPage = State(initialValue: max(0, book.currentPage))
         _totalPages = State(initialValue: max(book.totalPages, 1))
+        _chapters = State(initialValue: book.chapters)
+        _activeChapterIndex = State(initialValue: nil)
     }
 
     var body: some View {
@@ -33,13 +43,18 @@ struct ReaderView: View {
             readingContent
 
             // Top/bottom controls overlay
-            if showControls && !showSettings {
+            if showControls && !showSettings && !showTOC {
                 controlsOverlay
             }
 
             // Settings panel
             if showSettings {
                 settingsPanelOverlay
+            }
+
+            // Table of contents panel
+            if showTOC {
+                tocPanelOverlay
             }
         }
         .onAppear {
@@ -59,6 +74,14 @@ struct ReaderView: View {
                 volumeHandler.stop()
             }
         }
+        .onChange(of: chapters) { _ in
+            // Keep the top bar title in sync with the current chapter mapping.
+            if let active = activeChapterIndex,
+               active >= 0,
+               active < chapters.count {
+                chapterTitle = chapters[active].title
+            }
+        }
         .preferredColorScheme(colorSchemeForTheme)
         .statusBarHidden(!showControls)
         .animation(.easeInOut(duration: 0.25), value: showControls)
@@ -74,6 +97,19 @@ struct ReaderView: View {
                 currentPage: $currentPage,
                 totalPages: $totalPages,
                 chapterTitle: $chapterTitle,
+                chapterMetrics: Binding(
+                    get: { chapters.map { ChapterMetric(pageOffset: $0.pageOffset, pageCount: $0.pageCount) } },
+                    set: { metrics in
+                        var updated = chapters
+                        for index in updated.indices {
+                            guard index < metrics.count else { break }
+                            updated[index].pageOffset = metrics[index].pageOffset
+                            updated[index].pageCount = metrics[index].pageCount
+                        }
+                        chapters = updated
+                    }
+                ),
+                activeChapterIndex: $activeChapterIndex,
                 viewportSize: geometry.size
             )
             // A single transparent layer over the WebView captures BOTH taps
@@ -189,6 +225,7 @@ struct ReaderView: View {
             Button {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                     showSettings = true
+                    showTOC = false
                 }
             } label: {
                 Image(systemName: "textformat.size")
@@ -205,7 +242,20 @@ struct ReaderView: View {
 
     // MARK: - Bottom Bar
     private var bottomBar: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 10) {
+            Button {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                    showTOC = true
+                    showSettings = false
+                }
+            } label: {
+                Image(systemName: "list.bullet")
+                    .font(.body.weight(.semibold))
+                    .foregroundColor(settings.settings.theme.accentColor)
+                    .frame(width: 28, height: 28)
+            }
+            .accessibilityLabel("目录")
+
             // Page slider
             if totalPages > 1 {
                 HStack(spacing: 0) {
@@ -246,6 +296,18 @@ struct ReaderView: View {
         SettingsPanelView(
             settings: $settings.settings,
             isPresented: $showSettings,
+            isControlsShown: $showControls
+        )
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .zIndex(2)
+    }
+
+    // MARK: - Table of Contents Overlay
+    private var tocPanelOverlay: some View {
+        TOCPanelView(
+            chapters: chapters,
+            currentPage: $currentPage,
+            isPresented: $showTOC,
             isControlsShown: $showControls
         )
         .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -345,6 +407,8 @@ struct BookWebView: UIViewRepresentable {
     @Binding var currentPage: Int
     @Binding var totalPages: Int
     @Binding var chapterTitle: String
+    @Binding var chapterMetrics: [ChapterMetric]
+    @Binding var activeChapterIndex: Int?
     let viewportSize: CGSize
 
     func makeCoordinator() -> Coordinator {
@@ -419,6 +483,8 @@ struct BookWebView: UIViewRepresentable {
         context.coordinator.currentPageBinding = _currentPage
         context.coordinator.totalPagesBinding = _totalPages
         context.coordinator.chapterTitleBinding = _chapterTitle
+        context.coordinator.chapterMetricsBinding = _chapterMetrics
+        context.coordinator.activeChapterIndexBinding = _activeChapterIndex
         context.coordinator.parent = self
     }
 
@@ -459,6 +525,8 @@ struct BookWebView: UIViewRepresentable {
         var currentPageBinding: Binding<Int>?
         var totalPagesBinding: Binding<Int>?
         var chapterTitleBinding: Binding<String>?
+        var chapterMetricsBinding: Binding<[ChapterMetric]>?
+        var activeChapterIndexBinding: Binding<Int?>?
 
         init(_ parent: BookWebView) {
             self.parent = parent
@@ -807,6 +875,7 @@ struct BookWebView: UIViewRepresentable {
             var currentPage = 0;
             var totalPages = 1;
             var pageStep = 1;
+            var chapterMetrics = [];
 
             function readerContainer() {
                 return document.getElementById('reader-container');
@@ -832,6 +901,7 @@ struct BookWebView: UIViewRepresentable {
                 totalPages = Math.max(1, Math.round(sw / pageStep));
                 if (currentPage > totalPages - 1) { currentPage = totalPages - 1; }
                 if (currentPage < 0) { currentPage = 0; }
+                computeChapterMetrics();
             }
 
             function applyScroll() {
@@ -840,12 +910,49 @@ struct BookWebView: UIViewRepresentable {
                 c.scrollLeft = currentPage * pageStep;
             }
 
+            function activeChunkIndex() {
+                if (!chapterMetrics.length) { return null; }
+                for (var i = 0; i < chapterMetrics.length; i++) {
+                    var start = chapterMetrics[i].pageOffset;
+                    var count = Math.max(1, chapterMetrics[i].pageCount || 1);
+                    if (currentPage >= start && currentPage < start + count) {
+                        return i;
+                    }
+                }
+                return chapterMetrics.length - 1;
+            }
+
+            function computeChapterMetrics() {
+                chapterMetrics = [];
+                var chunks = document.querySelectorAll('.content-chunk');
+                if (!chunks.length) { return; }
+                for (var i = 0; i < chunks.length; i++) {
+                    var chunk = chunks[i];
+                    var startPage = Math.max(0, Math.round((chunk.offsetLeft || 0) / pageStep));
+                    chapterMetrics.push({ pageOffset: startPage, pageCount: 1 });
+                }
+                for (var j = 0; j < chapterMetrics.length; j++) {
+                    var nextStart = (j + 1 < chapterMetrics.length) ? chapterMetrics[j + 1].pageOffset : totalPages;
+                    chapterMetrics[j].pageCount = Math.max(1, nextStart - chapterMetrics[j].pageOffset);
+                }
+            }
+
+            function postChapterMetrics() {
+                try {
+                    window.webkit.messageHandlers.pageHandler.postMessage({
+                        type: 'chapterMetrics',
+                        chapters: chapterMetrics
+                    });
+                } catch (e) {}
+            }
+
             function postPage() {
                 try {
                     window.webkit.messageHandlers.pageHandler.postMessage({
                         type: 'pageChange',
                         currentPage: currentPage,
-                        totalPages: totalPages
+                        totalPages: totalPages,
+                        activeChapterIndex: activeChunkIndex()
                     });
                 } catch (e) {}
             }
@@ -862,6 +969,7 @@ struct BookWebView: UIViewRepresentable {
             function recalculatePages() {
                 measure();
                 applyScroll();
+                postChapterMetrics();
                 postPage();
             }
 
@@ -904,8 +1012,10 @@ struct BookWebView: UIViewRepresentable {
 
             function bookInit() {
                 measure();
-                currentPage = Math.max(0, Math.min(\(initialPage), totalPages - 1));
+                currentPage = Math.max(0, Math.min(
+                    \(initialPage), totalPages - 1));
                 applyScroll();
+                postChapterMetrics();
                 postPage();
             }
 
@@ -960,6 +1070,29 @@ struct BookWebView: UIViewRepresentable {
                         self?.parent.totalPages = total
                         self?.totalPagesBinding?.wrappedValue = total
                     }
+                }
+                if let activeIndex = body["activeChapterIndex"] as? Int {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self = self else { return }
+                        self.activeChapterIndexBinding?.wrappedValue = activeIndex
+                        if let titleBinding = self.chapterTitleBinding,
+                           activeIndex >= 0,
+                           activeIndex < self.parent.book.chapters.count {
+                            titleBinding.wrappedValue = self.parent.book.chapters[activeIndex].title
+                        }
+                    }
+                }
+            } else if type == "chapterMetrics" {
+                guard let chapters = body["chapters"] as? [[String: Any]] else { return }
+                DispatchQueue.main.async { [weak self] in
+                    guard let self = self else { return }
+                    let metrics = chapters.map { chapter in
+                        ChapterMetric(
+                            pageOffset: chapter["pageOffset"] as? Int ?? 0,
+                            pageCount: chapter["pageCount"] as? Int ?? 1
+                        )
+                    }
+                    self.chapterMetricsBinding?.wrappedValue = metrics
                 }
             }
         }

@@ -15,6 +15,7 @@
 		2621CFDFD75D49D989982258 /* VolumeButtonHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02CB38A7C2F642669FEB1EB8 /* VolumeButtonHandler.swift */; };
 		3DF6976DD77C445795ADCDEE /* Book.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5481037C426D45CE92E27110 /* Book.swift */; };
 		459287AD30071ED200924618 /* SwiftBookApp.icon in Resources */ = {isa = PBXBuildFile; fileRef = 459287AC30071ED200924618 /* SwiftBookApp.icon */; };
+		45C333CE30078E650097AB77 /* TOCPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45C333CD30078E650097AB77 /* TOCPanelView.swift */; };
 		788F3F9DB13F4C3DA2B55916 /* BookManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA4195C0B4FF45019EAF3DD3 /* BookManager.swift */; };
 		A7DCE707E7D9402D92285771 /* SwiftBookApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72E39E59874D4D419559328E /* SwiftBookApp.swift */; };
 		DD2EC9423AB94B0FA1EBD15D /* SettingsPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7595D5946D2D41E889F0E441 /* SettingsPanelView.swift */; };
@@ -25,6 +26,7 @@
 		02CB38A7C2F642669FEB1EB8 /* VolumeButtonHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeButtonHandler.swift; sourceTree = "<group>"; };
 		36618917CEE240AF9876E5E0 /* BookCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookCardView.swift; sourceTree = "<group>"; };
 		459287AC30071ED200924618 /* SwiftBookApp.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = SwiftBookApp.icon; sourceTree = "<group>"; };
+		45C333CD30078E650097AB77 /* TOCPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TOCPanelView.swift; sourceTree = "<group>"; };
 		5481037C426D45CE92E27110 /* Book.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Book.swift; sourceTree = "<group>"; };
 		68F7F370997E4DAC907FEA6E /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		72E39E59874D4D419559328E /* SwiftBookApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftBookApp.swift; sourceTree = "<group>"; };
@@ -102,6 +104,7 @@
 		CC80E8AEA1C34DEDBAACEDF7 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				45C333CD30078E650097AB77 /* TOCPanelView.swift */,
 				68F7F370997E4DAC907FEA6E /* LibraryView.swift */,
 				F4CE96986AB141FB88C6B2F1 /* ReaderView.swift */,
 				7595D5946D2D41E889F0E441 /* SettingsPanelView.swift */,
@@ -211,6 +214,7 @@
 				788F3F9DB13F4C3DA2B55916 /* BookManager.swift in Sources */,
 				1E4491474DDD41728371F75E /* EPUBParser.swift in Sources */,
 				2621CFDFD75D49D989982258 /* VolumeButtonHandler.swift in Sources */,
+				45C333CE30078E650097AB77 /* TOCPanelView.swift in Sources */,
 				0156D061CB05440D8C4CD1B0 /* ZipReader.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
