@@ -176,14 +176,14 @@ struct SettingsPanelView: View {
                             withAnimation { settings.fontFamily = font }
                         } label: {
                             VStack(spacing: 6) {
-                                Text(font.sample)
-                                    .font(.custom(font.uiFontName, size: 20))
-                                    .frame(width: 52, height: 52)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 12)
-                                            .fill(settings.fontFamily == font ? Color.accentColor : Color.secondary.opacity(0.1))
-                                    )
-                                    .foregroundColor(settings.fontFamily == font ? .white : .primary)
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 12)
+                                        .fill(settings.fontFamily == font ? Color.accentColor : Color.secondary.opacity(0.1))
+                                        .frame(width: 52, height: 52)
+                                    Text(font.sample)
+                                        .font(.custom(font.uiFontName, size: 20))
+                                        .foregroundColor(settings.fontFamily == font ? .white : .primary)
+                                }
 
                                 Text(font.displayName)
                                     .font(.system(size: 11))

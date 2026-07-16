@@ -1,9 +1,15 @@
 # SwiftBook · 仿 Apple Books 的 iOS EPUB 阅读器
 
+![Platform](https://img.shields.io/badge/platform-iOS-lightgrey)
+![iOS](https://img.shields.io/badge/iOS-16.0%2B-blue)
+![Swift](https://img.shields.io/badge/Swift-5.9-orange)
+![Xcode](https://img.shields.io/badge/Xcode-15%2B-147EFB)
+
 一个用 SwiftUI + WKWebView 实现的 iOS EPUB 电子书阅读器，UI 仿 Apple Books：导入 EPUB、左右翻页（点击 / 滑动 / 底部进度条 / 音量键）、调节字号字体主题。
 
-> **当前状态**：MVP 可用，已在 iOS 模拟器（26.3）以及 iOS 18.6 真机上跑通导入与阅读全流程。逐项状态见 [TODO.md](TODO.md)。
-> **构建约束**：只能在 Mac 的 Xcode 里编译运行（这里的环境无法编译）；音量键翻页需**真机**验证，模拟器结果不可信。
+![display_pic](Display.JPEG)
+
+> **当前状态**：MVP 可用。已实测环境：macOS 15.6 / Xcode 26.3 / iOS 18.6 真机 & iOS 26 模拟器。逐项状态见 [TODO.md](TODO.md)。
 
 ---
 
@@ -15,7 +21,7 @@
 | 分页 & 翻页：点击左右区 / 左右滑动 / 底部进度条 | ✅ |
 | 单击屏幕中部：呼出 / 收起控制条 | ✅ |
 | 断点续读（记住上次页码，书库进度条同步） | ✅ |
-| 字号(12–32) / 字体 / 行距 / 对齐 / 主题(白·暖黄·暗黑·护眼绿) / 页边距 | ✅ |
+| 字号(12–40) / 字体(苹方·思源宋体·Georgia 等) / 行距 / 对齐 / 主题(白·暖黄·暗黑·护眼绿) / 页边距 | ✅ |
 | EPUB 内嵌图片 / 封面图渲染 | ✅ |
 | 音量键翻页（音量+ 上一页，音量- 下一页，不改系统音量） | ✅ |
 | 目录: 点击可跳转到对应章节, 但是部分目录识别不准确 | ✅ |
@@ -47,7 +53,9 @@ Reader/
         │   ├── EPUBParser.swift                # 解析 container.xml→OPF→spine/TOC
         │   └── VolumeButtonHandler.swift       # 音量键 KVO → 翻页
         ├── Utilities/ZipReader.swift           # 最小 ZIP 解压（stored + deflate）
-        └── Resources/Info.plist
+        └── Resources/
+            ├── Info.plist
+            └── Fonts/                         # 思源宋体 (Git LFS 管理)
 ```
 
 **改动最集中的文件是 [SwiftBook/Sources/Views/ReaderView.swift](SwiftBook/Sources/Views/ReaderView.swift)** —— 阅读与分页、手势、设置注入、断点续读、图片改写都在这里（含 `BookWebView` 这个 `UIViewRepresentable` 和内嵌的分页 JS）。
@@ -55,6 +63,22 @@ Reader/
 ---
 
 ## 构建 & 运行（仅 Mac + Xcode）
+
+```bash
+git clone git@github.com:KevinLeeeee323/SwiftBookApp.git
+cd SwiftBookApp
+open SwiftBook/SwiftBook.xcodeproj
+```
+
+> 💡 **如需思源宋体 / 思源宋体·粗**：项目中的中文字体文件使用 Git LFS 管理，直接 `git clone` 得到的只是指针。请先安装 Git LFS 并拉取字体：
+>
+> ```bash
+> brew install git-lfs
+> git lfs install
+> git lfs pull          # 拉取 .otf 字体文件（约 75MB，三个字重）
+> ```
+>
+> 如果不需要这两种字体，可跳过 `git lfs pull`，App 仍可正常编译运行（中文只有苹方）。
 
 工程已经生成好，直接打开即可：
 
@@ -71,7 +95,15 @@ cd SwiftBook && xcodegen generate     # 按 project.yml 重建 .xcodeproj
 ```
 
 在 Xcode 里选 target **SwiftBook** → **Signing & Capabilities** 选开发团队、改 Bundle ID → 选真机/模拟器 → ▶️。
-要求：iOS 16.0+ / Xcode 15+ / Swift 5.9+。
+
+### 系统要求
+
+| | 最低版本 |
+|---|---|
+| iOS | 16.0 |
+| macOS | 14.0 (Sonoma) |
+| Xcode | 15.0 |
+| Swift | 5.9 |
 
 ---
 
@@ -99,10 +131,15 @@ cd SwiftBook && xcodegen generate     # 按 project.yml 重建 .xcodeproj
 - **坑⑤**：早期"三个点击区 + 单独一个滑动手势"会在 WebView 上争手势（tap vs drag 竞技场冲突），滑动经常不识别。合成一个手势后独占、稳定。
 - 控制条显示时，其 ZStack 底层垫一层全屏透明捕获层，中间单击即收起（直接把 `.onTapGesture` 挂 VStack 会漏掉 `Spacer` 空白区的点击）。
 
-### 5. 音量键翻页（真机待验证）
+### 5. 音量键翻页（真机已验证）
 - KVO 监听 `AVAudioSession.outputVolume`；`.playback + .mixWithOthers` 且激活会话；**循环播放内存里生成的静音 WAV（volume=0）**保持会话有输出——否则 outputVolume 的 KVO 常常不触发（模拟器尤甚），按键会退回改铃声音量。
 - 在 key window 里放一个 1×1、几乎透明的 `MPVolumeView` 抑制系统音量 HUD，并借它的 `UISlider` 把音量**复位到 0.5 基准**，保证上/下都还有变化量可测。
-- **坑⑥/未决**：模拟器里可能只加音量、不翻页——这是模拟器限制，**必须真机验证**。
+- **真机已验证通过。** 模拟器不可测（属模拟器限制）。
+
+### 6. 中文字体：打包思源宋体
+- iOS 只自带苹方（PingFang SC）一种中文字体，宋体/楷体是 macOS 字体、iOS 上没有。要提供真正的宋体阅读体验，必须**打包开源字体**。
+- 项目通过 Git LFS 管理了 **Source Han Serif SC** Regular + SemiBold + Bold（思源宋体，OFL 许可，免费可商用）。
+- 字体约 25MB/个，三个共约 75MB。clone 后需执行 `git lfs pull` 拉取实际字体文件。
 
 ### 6. EPUB 解析与解压
 - EPUB 本质是 ZIP：`ZipReader` 手写最小解析（stored + deflate）；`EPUBParser` 走 `META-INF/container.xml` → OPF（元数据/manifest/spine）→ NCX/TOC。
@@ -112,15 +149,16 @@ cd SwiftBook && xcodegen generate     # 按 project.yml 重建 .xcodeproj
 
 ## 已知限制
 
-- **音量键翻页**在模拟器上不可信，需真机确认（见上 §5）。
-- 只支持 EPUB（无 PDF）；无书签/笔记、无全文搜索、无 TTS、无同步（按产品范围有意排除搜索/快捷指令）。
-- 阅读区常驻全屏（忽略安全区）——刘海机型极端小边距下，正文首行可能靠近状态栏；目前靠 `marginV` 留白，未做单独安全区内衬。
-- 中文文本没法正确切换宋体/楷体等中文字体
+- **音量键翻页**在模拟器不可测（模拟器限制），真机已通过。
+- 只支持 EPUB（无 PDF）；无书签/笔记、无全文搜索、无 TTS、无同步。
+- 阅读区常驻全屏（忽略安全区）；靠 `marginV` + `env(safe-area-inset-*)` 避让灵动岛。
+- 中文字体目前提供苹方和思源宋体两种风格（宋体/楷体需要打包额外字体，见 §6）。
 
 后续计划见 [TODO.md](TODO.md)。
 
-## Acknowledgement
-本项目在开发过程中使用以下 AI 工具作为协助：
+## Co-Contributors / 鸣谢
+
+本项目在开发过程中获得以下 AI 工具协助：
 - Claude
 - Codex
 - DeepSeek

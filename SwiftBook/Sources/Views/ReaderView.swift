@@ -498,6 +498,7 @@ struct BookWebView: UIViewRepresentable {
         let dict: [String: Any] = [
             "fontSize": settings.fontSize,
             "fontFamilyCSS": settings.fontFamily.cssName,
+            "fontWeight": settings.fontFamily.cssFontWeight,
             "bgColor": settings.theme.bgColor,
             "textColor": settings.theme.textColor,
             "lineSpacing": settings.lineSpacing,
@@ -605,6 +606,7 @@ struct BookWebView: UIViewRepresentable {
             }
             copyFont("SourceHanSerifSC-Regular", dest: "_reader_font_serif.otf")
             copyFont("SourceHanSerifSC-SemiBold", dest: "_reader_font_serif_semibold.otf")
+            copyFont("SourceHanSerifSC-Bold", dest: "_reader_font_serif_bold.otf")
             do {
                 try fullHTML.data(using: .utf8)?.write(to: htmlURL)
                 webView.loadFileURL(htmlURL, allowingReadAccessTo: contentDir)
@@ -772,6 +774,7 @@ struct BookWebView: UIViewRepresentable {
             let defaultsDict: [String: Any] = [
                 "fontSize": fontSize,
                 "fontFamilyCSS": fontCSS,
+                "fontWeight": settings.fontFamily.cssFontWeight,
                 "bgColor": bgColor,
                 "textColor": textColor,
                 "lineSpacing": settings.lineSpacing,
@@ -811,6 +814,13 @@ struct BookWebView: UIViewRepresentable {
                 font-weight: 600;
                 font-display: swap;
             }
+            @font-face {
+                font-family: 'Source Han Serif SC';
+                src: local('Source Han Serif SC'),
+                     url('_reader_font_serif_bold.otf') format('opentype');
+                font-weight: 700;
+                font-display: swap;
+            }
             * { margin: 0; padding: 0; box-sizing: border-box; }
 
             html, body {
@@ -820,6 +830,7 @@ struct BookWebView: UIViewRepresentable {
                 background: \(bgColor);
                 color: \(textColor);
                 font-family: \(fontCSS);
+                font-weight: \(settings.fontFamily.cssFontWeight);
                 font-size: \(fontSize)px;
                 line-height: \(lineHeight)px;
                 text-align: \(textAlign);
@@ -1025,6 +1036,7 @@ struct BookWebView: UIViewRepresentable {
                     'background: ' + (s.bgColor || DEFAULTS.bgColor) + ';' +
                     'color: ' + (s.textColor || DEFAULTS.textColor) + ';' +
                     'font-family: ' + (s.fontFamilyCSS || DEFAULTS.fontFamilyCSS) + ';' +
+                    'font-weight: ' + (s.fontWeight || DEFAULTS.fontWeight) + ';' +
                     'font-size: ' + fs + 'px;' +
                     'line-height: ' + (fs * ls) + 'px;' +
                     'text-align: ' + (s.textAlign || DEFAULTS.textAlign) + ';' +

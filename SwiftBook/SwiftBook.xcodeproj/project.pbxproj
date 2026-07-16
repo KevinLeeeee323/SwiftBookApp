@@ -16,6 +16,7 @@
 		3DF6976DD77C445795ADCDEE /* Book.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5481037C426D45CE92E27110 /* Book.swift */; };
 		4577C07F300880BA00D4C0DA /* SourceHanSerifSC-Regular.otf in Resources */ = {isa = PBXBuildFile; fileRef = 4577C07D300880BA00D4C0DA /* SourceHanSerifSC-Regular.otf */; };
 		4577C0813008825000D4C0DA /* SourceHanSerifSC-SemiBold.otf in Resources */ = {isa = PBXBuildFile; fileRef = 4577C0803008825000D4C0DA /* SourceHanSerifSC-SemiBold.otf */; };
+		4577C083300886DA00D4C0DA /* SourceHanSerifSC-Bold.otf in Resources */ = {isa = PBXBuildFile; fileRef = 4577C082300886DA00D4C0DA /* SourceHanSerifSC-Bold.otf */; };
 		459287AD30071ED200924618 /* SwiftBookApp.icon in Resources */ = {isa = PBXBuildFile; fileRef = 459287AC30071ED200924618 /* SwiftBookApp.icon */; };
 		45C333CE30078E650097AB77 /* TOCPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45C333CD30078E650097AB77 /* TOCPanelView.swift */; };
 		788F3F9DB13F4C3DA2B55916 /* BookManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA4195C0B4FF45019EAF3DD3 /* BookManager.swift */; };
@@ -29,6 +30,7 @@
 		36618917CEE240AF9876E5E0 /* BookCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookCardView.swift; sourceTree = "<group>"; };
 		4577C07D300880BA00D4C0DA /* SourceHanSerifSC-Regular.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceHanSerifSC-Regular.otf"; sourceTree = "<group>"; };
 		4577C0803008825000D4C0DA /* SourceHanSerifSC-SemiBold.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceHanSerifSC-SemiBold.otf"; sourceTree = "<group>"; };
+		4577C082300886DA00D4C0DA /* SourceHanSerifSC-Bold.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceHanSerifSC-Bold.otf"; sourceTree = "<group>"; };
 		459287AC30071ED200924618 /* SwiftBookApp.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = SwiftBookApp.icon; sourceTree = "<group>"; };
 		45C333CD30078E650097AB77 /* TOCPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TOCPanelView.swift; sourceTree = "<group>"; };
 		5481037C426D45CE92E27110 /* Book.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Book.swift; sourceTree = "<group>"; };
@@ -90,6 +92,7 @@
 		4577C07E300880BA00D4C0DA /* Fonts */ = {
 			isa = PBXGroup;
 			children = (
+				4577C082300886DA00D4C0DA /* SourceHanSerifSC-Bold.otf */,
 				4577C0803008825000D4C0DA /* SourceHanSerifSC-SemiBold.otf */,
 				4577C07D300880BA00D4C0DA /* SourceHanSerifSC-Regular.otf */,
 			);
@@ -216,6 +219,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				459287AD30071ED200924618 /* SwiftBookApp.icon in Resources */,
+				4577C083300886DA00D4C0DA /* SourceHanSerifSC-Bold.otf in Resources */,
 				4577C07F300880BA00D4C0DA /* SourceHanSerifSC-Regular.otf in Resources */,
 				4577C0813008825000D4C0DA /* SourceHanSerifSC-SemiBold.otf in Resources */,
 			);

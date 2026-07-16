@@ -90,6 +90,7 @@
 	<array>
 		<string>Fonts/SourceHanSerifSC-Regular.otf</string>
 		<string>Fonts/SourceHanSerifSC-SemiBold.otf</string>
+		<string>Fonts/SourceHanSerifSC-Bold.otf</string>
 	</array>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
