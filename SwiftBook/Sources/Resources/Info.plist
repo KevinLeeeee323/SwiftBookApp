@@ -86,6 +86,11 @@
 	<string>SwiftBook 需要访问文件以导入 EPUB 电子书</string>
 	<key>UIFileSharingEnabled</key>
 	<true/>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Fonts/SourceHanSerifSC-Regular.otf</string>
+		<string>Fonts/SourceHanSerifSC-SemiBold.otf</string>
+	</array>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 </dict>

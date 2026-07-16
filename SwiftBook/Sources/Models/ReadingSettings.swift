@@ -45,6 +45,7 @@ struct ReadingSettings: Equatable, Codable {
 enum FontFamily: String, CaseIterable, Codable {
     case system        = "San Francisco"
     case pingfang      = "苹方"
+    case songti        = "思源宋体"
     case georgia       = "Georgia"
     case timesNewRoman = "Times New Roman"
     case palatino      = "Palatino"
@@ -55,6 +56,7 @@ enum FontFamily: String, CaseIterable, Codable {
         switch self {
         case .system:        return "-apple-system, 'PingFang SC', sans-serif"
         case .pingfang:      return "'PingFang SC', sans-serif"
+        case .songti:        return "'Source Han Serif SC', 'Songti SC', 'PingFang SC', serif"
         case .georgia:       return "Georgia, 'PingFang SC', serif"
         case .timesNewRoman: return "'Times New Roman', 'PingFang SC', serif"
         case .palatino:      return "Palatino, 'PingFang SC', serif"
@@ -70,6 +72,7 @@ enum FontFamily: String, CaseIterable, Codable {
         switch self {
         case .system:        return "PingFang SC"
         case .pingfang:      return "PingFang SC"
+        case .songti:        return "Source Han Serif SC"
         case .georgia:       return "Georgia"
         case .timesNewRoman: return "Times New Roman"
         case .palatino:      return "Palatino"
@@ -82,14 +85,15 @@ enum FontFamily: String, CaseIterable, Codable {
     var sample: String {
         switch self {
         case .pingfang: return "字"
-        case .system:   return "字Aa"
+        case .songti:   return "字"
+        case .system:   return "Aa"
         default:        return "Aa"
         }
     }
 
     var isSerif: Bool {
         switch self {
-        case .georgia, .timesNewRoman, .palatino: return true
+        case .georgia, .timesNewRoman, .palatino, .songti: return true
         default: return false
         }
     }

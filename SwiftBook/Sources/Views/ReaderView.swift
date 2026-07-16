@@ -228,7 +228,7 @@ struct ReaderView: View {
                     showTOC = false
                 }
             } label: {
-                Image(systemName: "textformat.size")
+                Image(systemName: "gear")
                     .font(.body.weight(.semibold))
                     .foregroundColor(settings.settings.theme.accentColor)
             }
@@ -590,7 +590,21 @@ struct BookWebView: UIViewRepresentable {
             // Write the generated HTML into the content directory and load it as a
             // file URL. Unlike loadHTMLString(baseURL:), loadFileURL(allowingReadAccessTo:)
             // actually grants the WebView read access to the folder, so local images load.
+            // Also copy the bundled serif font into the content dir so the @font-face rule
+            // in the HTML can load it with a relative url() reference.
             let htmlURL = contentDir.appendingPathComponent("_reader_generated.html")
+            // Copy bundled fonts into the content directory so the @font-face url()
+            // fallback works. local() (UIAppFonts) is the primary source, but the
+            // file fallback is kept as a safety net.
+            func copyFont(_ filename: String, dest: String) {
+                let destURL = contentDir.appendingPathComponent(dest)
+                guard !FileManager.default.fileExists(atPath: destURL.path) else { return }
+                let bundled = Bundle.main.url(forResource: filename, withExtension: "otf")
+                           ?? Bundle.main.url(forResource: filename, withExtension: "otf", subdirectory: "Fonts")
+                if let src = bundled { try? FileManager.default.copyItem(at: src, to: destURL) }
+            }
+            copyFont("SourceHanSerifSC-Regular", dest: "_reader_font_serif.otf")
+            copyFont("SourceHanSerifSC-SemiBold", dest: "_reader_font_serif_semibold.otf")
             do {
                 try fullHTML.data(using: .utf8)?.write(to: htmlURL)
                 webView.loadFileURL(htmlURL, allowingReadAccessTo: contentDir)
@@ -776,6 +790,27 @@ struct BookWebView: UIViewRepresentable {
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
             <style>
+            /* Make the bundled serif font visible to the WebView even when loaded
+               via loadFileURL (which grants access to the content directory, not the
+               app bundle). The font file itself is copied to the content directory by
+               loadContent so the relative path resolves. */
+            /* Register the bundled serif font for the WebView. local() picks it up
+               from UIAppFonts registration; the url() fallback uses the copy placed
+               in the content directory by loadContent. */
+            @font-face {
+                font-family: 'Source Han Serif SC';
+                src: local('Source Han Serif SC'),
+                     url('_reader_font_serif.otf') format('opentype');
+                font-weight: 400;
+                font-display: swap;
+            }
+            @font-face {
+                font-family: 'Source Han Serif SC';
+                src: local('Source Han Serif SC'),
+                     url('_reader_font_serif_semibold.otf') format('opentype');
+                font-weight: 600;
+                font-display: swap;
+            }
             * { margin: 0; padding: 0; box-sizing: border-box; }
 
             html, body {

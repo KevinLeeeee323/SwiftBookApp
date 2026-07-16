@@ -188,7 +188,9 @@ struct SettingsPanelView: View {
                                 Text(font.displayName)
                                     .font(.system(size: 11))
                                     .foregroundColor(settings.fontFamily == font ? .accentColor : .secondary)
-                                    .lineLimit(1)
+                                    .lineLimit(2)
+                                    .multilineTextAlignment(.center)
+                                    .frame(width: 64)
                             }
                         }
                     }

@@ -14,6 +14,8 @@
 		1E4491474DDD41728371F75E /* EPUBParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = C13B775298704D5BA3561C13 /* EPUBParser.swift */; };
 		2621CFDFD75D49D989982258 /* VolumeButtonHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02CB38A7C2F642669FEB1EB8 /* VolumeButtonHandler.swift */; };
 		3DF6976DD77C445795ADCDEE /* Book.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5481037C426D45CE92E27110 /* Book.swift */; };
+		4577C07F300880BA00D4C0DA /* SourceHanSerifSC-Regular.otf in Resources */ = {isa = PBXBuildFile; fileRef = 4577C07D300880BA00D4C0DA /* SourceHanSerifSC-Regular.otf */; };
+		4577C0813008825000D4C0DA /* SourceHanSerifSC-SemiBold.otf in Resources */ = {isa = PBXBuildFile; fileRef = 4577C0803008825000D4C0DA /* SourceHanSerifSC-SemiBold.otf */; };
 		459287AD30071ED200924618 /* SwiftBookApp.icon in Resources */ = {isa = PBXBuildFile; fileRef = 459287AC30071ED200924618 /* SwiftBookApp.icon */; };
 		45C333CE30078E650097AB77 /* TOCPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45C333CD30078E650097AB77 /* TOCPanelView.swift */; };
 		788F3F9DB13F4C3DA2B55916 /* BookManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BA4195C0B4FF45019EAF3DD3 /* BookManager.swift */; };
@@ -25,6 +27,8 @@
 /* Begin PBXFileReference section */
 		02CB38A7C2F642669FEB1EB8 /* VolumeButtonHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VolumeButtonHandler.swift; sourceTree = "<group>"; };
 		36618917CEE240AF9876E5E0 /* BookCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookCardView.swift; sourceTree = "<group>"; };
+		4577C07D300880BA00D4C0DA /* SourceHanSerifSC-Regular.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceHanSerifSC-Regular.otf"; sourceTree = "<group>"; };
+		4577C0803008825000D4C0DA /* SourceHanSerifSC-SemiBold.otf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "SourceHanSerifSC-SemiBold.otf"; sourceTree = "<group>"; };
 		459287AC30071ED200924618 /* SwiftBookApp.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; path = SwiftBookApp.icon; sourceTree = "<group>"; };
 		45C333CD30078E650097AB77 /* TOCPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TOCPanelView.swift; sourceTree = "<group>"; };
 		5481037C426D45CE92E27110 /* Book.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Book.swift; sourceTree = "<group>"; };
@@ -72,12 +76,30 @@
 			children = (
 				E3641A36088442C686A36EE2 /* Sources */,
 				DEA7A91CAB9D4D05AA8F02CE /* Products */,
+				4577C07C3008801B00D4C0DA /* Recovered References */,
 			);
+			sourceTree = "<group>";
+		};
+		4577C07C3008801B00D4C0DA /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
+		4577C07E300880BA00D4C0DA /* Fonts */ = {
+			isa = PBXGroup;
+			children = (
+				4577C0803008825000D4C0DA /* SourceHanSerifSC-SemiBold.otf */,
+				4577C07D300880BA00D4C0DA /* SourceHanSerifSC-Regular.otf */,
+			);
+			path = Fonts;
 			sourceTree = "<group>";
 		};
 		46340F474DD643C08750FA22 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				4577C07E300880BA00D4C0DA /* Fonts */,
 				459287AC30071ED200924618 /* SwiftBookApp.icon */,
 			);
 			path = Resources;
@@ -194,6 +216,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				459287AD30071ED200924618 /* SwiftBookApp.icon in Resources */,
+				4577C07F300880BA00D4C0DA /* SourceHanSerifSC-Regular.otf in Resources */,
+				4577C0813008825000D4C0DA /* SourceHanSerifSC-SemiBold.otf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

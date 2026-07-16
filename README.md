@@ -119,5 +119,11 @@ cd SwiftBook && xcodegen generate     # 按 project.yml 重建 .xcodeproj
 
 后续计划见 [TODO.md](TODO.md)。
 
+## Acknowledgement
+本项目在开发过程中使用以下 AI 工具作为协助：
+- Claude
+- Codex
+- DeepSeek
+
 ## License
 MIT
