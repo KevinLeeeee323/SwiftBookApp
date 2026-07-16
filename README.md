@@ -1,6 +1,6 @@
 # SwiftBook · An Apple Books-style EPUB Reader for iOS
 
-[中文版 (Chinese)](README.md)
+[中文版 (Chinese)](README_CN.md)
 
 ![Platform](https://img.shields.io/badge/platform-iOS-lightgrey)
 ![iOS](https://img.shields.io/badge/iOS-16.0%2B-blue)
