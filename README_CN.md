@@ -1,5 +1,7 @@
 # SwiftBook · 仿 Apple Books 的 iOS EPUB 阅读器
 
+[English Version (英文版)](README_EN.md)
+
 ![Platform](https://img.shields.io/badge/platform-iOS-lightgrey)
 ![iOS](https://img.shields.io/badge/iOS-16.0%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
@@ -33,6 +35,7 @@
 ```
 Reader/
 ├── README.md                 # 本文件
+├── README_EN.md              # 英文版 README
 ├── TODO.md                   # 进度与后续计划
 ├── create_project.sh         # 一键生成 .xcodeproj 的脚本
 └── SwiftBook/
@@ -165,3 +168,7 @@ cd SwiftBook && xcodegen generate     # 按 project.yml 重建 .xcodeproj
 
 ## License
 MIT
+
+---
+
+[English Version (英文版)](README_EN.md)
