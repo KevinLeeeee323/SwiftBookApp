@@ -35,7 +35,11 @@ I wanted to read in bed without reaching out of the covers to tap the screen eve
 | Font size (12–40) · font family (PingFang · Source Han Serif · Georgia & more) · line spacing · alignment · themes (white · warm · dark · eye-care green) · margins | ✅ |
 | Embedded images & cover rendering | ✅ |
 | **Volume button page turn** (Vol+ = prev page, Vol- = next page; system volume unchanged) | ✅ |
-| Table of contents with chapter jump (partial accuracy on complex EPUBs) | ✅ |
+| Table of contents with chapter jump (href-matched, accurate for most EPUBs) | ✅ |
+| **Footnote / endnote jump + back navigation** (tap footnote → jump to note → "back to origin" button with auto-dismiss) | ✅ |
+| **Bottom bar: page jump input** (enter page number → validate & jump) | ✅ |
+| **Reading progress tracking** (today's reading time · streak · daily goal · books finished this year) | ✅ |
+| Mark books as finished / unfinished (long-press context menu in library) | ✅ |
 
 ---
 
@@ -54,14 +58,17 @@ Reader/
         ├── App/SwiftBookApp.swift              # App entry point
         ├── Models/
         │   ├── Book.swift                      # Book model (spine, chapters, progress, cover)
+        │   ├── ReadingSession.swift            # Reading session model (duration tracking)
         │   └── ReadingSettings.swift           # Reading settings (font, theme, margins… enums)
         ├── Views/
         │   ├── LibraryView.swift               # Library grid + import
         │   ├── ReaderView.swift                # ★ Core reader (BookWebView)
         │   ├── SettingsPanelView.swift         # Bottom settings panel
+        │   ├── ReadingStatsView.swift          # Reading stats & goals tab
         │   └── BookCardView.swift              # Library card + progress bar
         ├── Services/
         │   ├── BookManager.swift               # Library, import, unzip, progress persistence
+        │   ├── ReadingStatsManager.swift       # Reading stats: sessions, streaks, goals
         │   ├── EPUBParser.swift                # container.xml → OPF → spine / TOC
         │   └── VolumeButtonHandler.swift       # Volume key KVO → page turn
         ├── Utilities/ZipReader.swift           # Minimal ZIP decompressor (stored + deflate)
@@ -192,5 +199,3 @@ This project was developed with AI assistance from:
 MIT — see [LICENSE](LICENSE) (if present) or the repository metadata.
 
 ---
-
-[中文版 (Chinese README)](README.md)

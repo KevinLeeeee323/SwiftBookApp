@@ -1,17 +1,26 @@
 # SwiftBook · 仿 Apple Books 的 iOS EPUB 阅读器
 
-[English Version (英文版)](README_EN.md)
+[English Version (英文版)](README.md)
 
 ![Platform](https://img.shields.io/badge/platform-iOS-lightgrey)
 ![iOS](https://img.shields.io/badge/iOS-16.0%2B-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9-orange)
 ![Xcode](https://img.shields.io/badge/Xcode-15%2B-147EFB)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-一个用 SwiftUI + WKWebView 实现的 iOS EPUB 电子书阅读器，UI 仿 Apple Books：导入 EPUB、左右翻页（点击 / 滑动 / 底部进度条 / 音量键）、调节字号字体主题。
+一个用 SwiftUI + WKWebView 实现的 iOS EPUB 电子书阅读器，UI 仿 Apple Books：导入 EPUB、左右翻页（点击 / 滑动 / 底部进度条 / **音量键**）、调节字号字体主题。
 
 ![display_pic](Display.JPEG)
 
 > **当前状态**：MVP 可用。已实测环境：macOS 15.6 / Xcode 26.3 / iOS 18.6 真机 & iOS 26 模拟器。逐项状态见 [TODO.md](TODO.md)。
+
+---
+
+## 为什么做这个
+
+iOS 自带的 Books App——连同几乎所有第三方阅读器（Kindle、Apple Books 等）——**都不支持用音量键翻页**。这个功能在 Android 和鸿蒙上已经标配了很多年，但 Apple 没有公开 API。
+
+我想在被窝里看书不用伸手去点屏幕。于是就有了 SwiftBook。
 
 ---
 
@@ -25,8 +34,12 @@
 | 断点续读（记住上次页码，书库进度条同步） | ✅ |
 | 字号(12–40) / 字体(苹方·思源宋体·Georgia 等) / 行距 / 对齐 / 主题(白·暖黄·暗黑·护眼绿) / 页边距 | ✅ |
 | EPUB 内嵌图片 / 封面图渲染 | ✅ |
-| 音量键翻页（音量+ 上一页，音量- 下一页，不改系统音量） | ✅ |
-| 目录: 点击可跳转到对应章节, 但是部分目录识别不准确 | ✅ |
+| **音量键翻页**（音量+ 上一页，音量- 下一页，不改系统音量） | ✅ |
+| 目录：点击可跳转到对应章节（href 匹配，多数 EPUB 准确） | ✅ |
+| **脚注/注释跳转 + 返回**（点击脚注 → 跳到注释页 → 底部"返回原文"按钮自动消失） | ✅ |
+| **底部栏页码跳转**（输入页码 → 校验 → 直接跳转） | ✅ |
+| **阅读进度统计**（今日阅读时长 · 连续天数 · 每日目标 · 本年读完书目） | ✅ |
+| 长按书库卡片 → 标记为已读完 / 标记为未读 | ✅ |
 
 ---
 
@@ -34,8 +47,8 @@
 
 ```
 Reader/
-├── README.md                 # 本文件
-├── README_EN.md              # 英文版 README
+├── README.md                 # 英文版 README
+├── README_CN.md              # ← 你在这里
 ├── TODO.md                   # 进度与后续计划
 ├── create_project.sh         # 一键生成 .xcodeproj 的脚本
 └── SwiftBook/
@@ -45,14 +58,17 @@ Reader/
         ├── App/SwiftBookApp.swift              # App 入口
         ├── Models/
         │   ├── Book.swift                      # 书籍模型（spine/chapters/进度/封面）
+        │   ├── ReadingSession.swift            # 阅读时段模型（时长追踪）
         │   └── ReadingSettings.swift           # 阅读设置（字号/字体/主题/边距…枚举）
         ├── Views/
         │   ├── LibraryView.swift               # 书库主界面（网格 + 导入）
         │   ├── ReaderView.swift                # ★ 阅读器（核心，含 BookWebView）
         │   ├── SettingsPanelView.swift         # 底部设置面板
+        │   ├── ReadingStatsView.swift          # 阅读统计 & 目标页
         │   └── BookCardView.swift              # 书库卡片 + 进度条
         ├── Services/
         │   ├── BookManager.swift               # 书库/导入/解压/进度持久化
+        │   ├── ReadingStatsManager.swift       # 阅读统计：时段、连续天数、目标
         │   ├── EPUBParser.swift                # 解析 container.xml→OPF→spine/TOC
         │   └── VolumeButtonHandler.swift       # 音量键 KVO → 翻页
         ├── Utilities/ZipReader.swift           # 最小 ZIP 解压（stored + deflate）
@@ -61,7 +77,7 @@ Reader/
             └── Fonts/                         # 思源宋体 (Git LFS 管理)
 ```
 
-**改动最集中的文件是 [SwiftBook/Sources/Views/ReaderView.swift](SwiftBook/Sources/Views/ReaderView.swift)** —— 阅读与分页、手势、设置注入、断点续读、图片改写都在这里（含 `BookWebView` 这个 `UIViewRepresentable` 和内嵌的分页 JS）。
+**改动最集中的文件是 [SwiftBook/Sources/Views/ReaderView.swift](SwiftBook/Sources/Views/ReaderView.swift)** —— 阅读与分页、手势、设置注入、断点续读、图片改写、脚注跳转都在这里（含 `BookWebView` 这个 `UIViewRepresentable` 和内嵌的分页 JS）。
 
 ---
 
@@ -127,7 +143,7 @@ cd SwiftBook && xcodegen generate     # 按 project.yml 重建 .xcodeproj
 
 ### 3. 断点续读：init 里就把状态喂满
 - `ReaderView.init(book:)` 直接用 `book.currentPage/totalPages` 给 `@State` 播种；`buildReaderHTML(initialPage:)` 让 JS 初始就滚到该页；`loadContent` 里 `pendingPage = book.currentPage`。
-- **坑④**：`currentPage` 与 `pendingPage` 起始相等，`updateUIView` 就不会误发 `goToPage(0)`；否则那次 0 会被 `.onChange(of: currentPage)` 存回，**把进度清成 0%**（表现为"书库进度条卡在 0%")。切记别在 `loadContent` 时机读 `@Binding`（那时还是 0）。
+- **坑④**：`currentPage` 与 `pendingPage` 起始相等，`updateUIView` 就不会误发 `goToPage(0)`；否则那次 0 会被 `.onChange(of: currentPage)` 存回，**把进度清成 0%**（表现为"书库进度条卡在 0%"）。切记别在 `loadContent` 时机读 `@Binding`（那时还是 0）。
 
 ### 4. 手势：点击与滑动合成一个
 - 读书区盖一层透明 `Color.clear`，用**单个** `DragGesture(minimumDistance:0)` 同时判定：明显水平拖 → 翻页；几乎没动（当点击）→ 左 1/3 上一页 / 右 1/3 下一页 / 中间呼出控制条。
@@ -144,7 +160,7 @@ cd SwiftBook && xcodegen generate     # 按 project.yml 重建 .xcodeproj
 - 项目通过 Git LFS 管理了 **Source Han Serif SC** Regular + SemiBold + Bold（思源宋体，OFL 许可，免费可商用）。
 - 字体约 25MB/个，三个共约 75MB。clone 后需执行 `git lfs pull` 拉取实际字体文件。
 
-### 6. EPUB 解析与解压
+### 7. EPUB 解析与解压
 - EPUB 本质是 ZIP：`ZipReader` 手写最小解析（stored + deflate）；`EPUBParser` 走 `META-INF/container.xml` → OPF（元数据/manifest/spine）→ NCX/TOC。
 - 解压时**所有路径扁平化**（`/`→`_`）落到 `Documents/Extracted/<书名>/`；章节 HTML 里的图片引用再用 `rewriteResourceRefs` 按"扁平全路径→文件名→`_文件名`后缀"改写到真实解压文件名。
 
@@ -159,16 +175,20 @@ cd SwiftBook && xcodegen generate     # 按 project.yml 重建 .xcodeproj
 
 后续计划见 [TODO.md](TODO.md)。
 
+---
+
 ## Co-Contributors / 鸣谢
 
 本项目在开发过程中获得以下 AI 工具协助：
-- Claude
-- Codex
-- DeepSeek
 
-## License
-MIT
+- Claude (Anthropic)
+- Codex (OpenAI)
+- DeepSeek
 
 ---
 
-[English Version (英文版)](README_EN.md)
+## License
+
+MIT — 详见 [LICENSE](LICENSE)（如有）或仓库元数据。
+
+---
