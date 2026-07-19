@@ -181,7 +181,7 @@ struct SettingsPanelView: View {
                                         .fill(settings.fontFamily == font ? Color.accentColor : Color.secondary.opacity(0.1))
                                         .frame(width: 52, height: 52)
                                     Text(font.sample)
-                                        .font(.custom(font.uiFontName, size: 20))
+                                        .font(.system(size: 20, weight: .medium))
                                         .foregroundColor(settings.fontFamily == font ? .white : .primary)
                                 }
 

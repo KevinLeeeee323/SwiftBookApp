@@ -195,6 +195,21 @@ final class BookManager: ObservableObject {
         saveLibrary()
     }
 
+    // MARK: - Mark book as finished / unfinished
+    func markBookAsFinished(_ book: Book) {
+        guard let index = books.firstIndex(where: { $0.id == book.id }) else { return }
+        books[index].isFinished = true
+        books[index].finishedDate = Date()
+        saveLibrary()
+    }
+
+    func markBookAsUnfinished(_ book: Book) {
+        guard let index = books.firstIndex(where: { $0.id == book.id }) else { return }
+        books[index].isFinished = false
+        books[index].finishedDate = nil
+        saveLibrary()
+    }
+
     // MARK: - Get content URL for a book
     func contentDirectory(for book: Book) -> URL {
         extractedDirURL.appendingPathComponent(book.filePath)

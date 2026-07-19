@@ -13,6 +13,8 @@ struct Book: Identifiable, Codable, Hashable, Transferable {
     var currentPage: Int
     var lastOpened: Date
     var dateAdded: Date
+    var isFinished: Bool = false
+    var finishedDate: Date? = nil
 
     // Chapter-level info (populated during parsing)
     var chapters: [Chapter] = []

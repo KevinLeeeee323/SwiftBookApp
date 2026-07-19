@@ -57,7 +57,8 @@ struct TOCPanelView: View {
                                     Text("\(max(1, chapter.pageOffset + 1))")
                                         .font(.caption.monospacedDigit())
                                         .foregroundColor(.secondary)
-                                        .frame(width: 44, alignment: .trailing)
+                                        .lineLimit(1)
+                                        .fixedSize()
                                 }
                                 .padding(.horizontal, 24)
                                 .padding(.vertical, 14)

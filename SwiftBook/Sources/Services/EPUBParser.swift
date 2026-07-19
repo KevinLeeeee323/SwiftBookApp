@@ -158,25 +158,33 @@ final class EPUBParser: @unchecked Sendable {
         let ncx = String(decoding: data, as: UTF8.self)
         var chapters: [Chapter] = []
 
-        // Extract navPoints
+        // Extract navPoints. Non-greedy matching means a parent <navPoint> that
+        // wraps child <navPoint> elements gets truncated at the first </navPoint>
+        // it encounters. We handle this by filtering out any extracted entry that
+        // itself contains another <navPoint> — those are grouping/parent entries,
+        // not leaf chapters.
         let navPointPattern = #"<navPoint[^>]*>.*?</navPoint>"#
         if let regex = try? NSRegularExpression(pattern: navPointPattern, options: .dotMatchesLineSeparators) {
             let nsNCX = ncx as NSString
             let matches = regex.matches(in: ncx, range: NSRange(location: 0, length: nsNCX.length))
-            for (index, match) in matches.enumerated() {
+            var chapterIndex = 0
+            for match in matches {
                 let navPoint = nsNCX.substring(with: match.range)
+                // Skip parent entries that wrap child navPoints
+                if navPoint.contains("<navPoint") { continue }
+
                 let label = extractXMLElement(navPoint, tag: "navLabel")?
                     .replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
                     .trimmingCharacters(in: .whitespacesAndNewlines)
-                _ = extractAttribute(navPoint, attr: "src") ?? ""
                 let contentHref = extractAttribute(navPoint, attr: "src") ?? ""
                 let resolvedHref = resolvePath(contentHref, relativeTo: baseDir)
 
                 chapters.append(Chapter(
-                    title: label ?? "章节 \(index + 1)",
+                    title: label ?? "章节 \(chapterIndex + 1)",
                     href: resolvedHref,
-                    playOrder: index
+                    playOrder: chapterIndex
                 ))
+                chapterIndex += 1
             }
         }
 

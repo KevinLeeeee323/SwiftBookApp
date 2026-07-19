@@ -132,6 +132,20 @@ struct LibraryView: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
+                    Button {
+                        if book.isFinished {
+                            bookManager.markBookAsUnfinished(book)
+                        } else {
+                            bookManager.markBookAsFinished(book)
+                        }
+                    } label: {
+                        if book.isFinished {
+                            Label("标记为未读", systemImage: "book.closed")
+                        } else {
+                            Label("标记为已读完", systemImage: "checkmark.circle")
+                        }
+                    }
+
                     Button(role: .destructive) {
                         withAnimation {
                             bookManager.removeBook(book)

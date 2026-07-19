@@ -10,7 +10,9 @@ struct ChapterMetric {
 // MARK: - Reader View
 struct ReaderView: View {
     @EnvironmentObject var bookManager: BookManager
+    @EnvironmentObject var readingStatsManager: ReadingStatsManager
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.scenePhase) private var scenePhase
 
     let book: Book
 
@@ -22,6 +24,12 @@ struct ReaderView: View {
     @State private var chapterTitle = ""
     @State private var chapters: [Chapter]
     @State private var activeChapterIndex: Int?
+    @State private var sessionStart: Date?
+    @State private var trackingPaused = false
+    @State private var showFootnoteBack = false
+    @State private var footnoteBackTimer: Timer?
+    @State private var jumpToPageText = ""
+    @State private var showExpandedSlider = false
 
     @StateObject private var settings = ReadingSettingsStore()
     @StateObject private var volumeHandler = VolumeButtonHandler()
@@ -56,13 +64,20 @@ struct ReaderView: View {
             if showTOC {
                 tocPanelOverlay
             }
+
+            // Footnote back-to-origin button
+            if showFootnoteBack {
+                footnoteBackButton
+            }
         }
         .onAppear {
             setupVolumeButtons()
+            startTracking()
         }
         .onDisappear {
             volumeHandler.stop()
             saveProgress()
+            stopAndSaveTracking()
         }
         .onChange(of: currentPage) { _ in
             saveProgress()
@@ -76,16 +91,34 @@ struct ReaderView: View {
         }
         .onChange(of: chapters) { _ in
             // Keep the top bar title in sync with the current chapter mapping.
-            if let active = activeChapterIndex,
-               active >= 0,
-               active < chapters.count {
-                chapterTitle = chapters[active].title
+            if let active = activeChapterIndex {
+                chapterTitle = chapterTitle(forSpineIndex: active)
+            }
+        }
+        .onChange(of: scenePhase) { newPhase in
+            switch newPhase {
+            case .active:
+                if trackingPaused {
+                    startTracking()
+                    trackingPaused = false
+                }
+            case .inactive, .background:
+                if sessionStart != nil {
+                    stopAndSaveTracking()
+                    trackingPaused = true
+                }
+            @unknown default:
+                break
             }
         }
         .preferredColorScheme(colorSchemeForTheme)
         .statusBarHidden(!showControls)
         .animation(.easeInOut(duration: 0.25), value: showControls)
         .animation(.easeInOut(duration: 0.3), value: showSettings)
+        .toolbar(.hidden, for: .tabBar)
+        .onReceive(NotificationCenter.default.publisher(for: .showFootnoteBack)) { _ in
+            showFootnoteReturn()
+        }
     }
 
     // MARK: - Reading Content (WKWebView)
@@ -170,10 +203,15 @@ struct ReaderView: View {
         ZStack {
             // Full-screen tap catcher: a single tap anywhere in the middle hides
             // the controls, so the user can immediately tap-to-turn again.
+            // First tap: collapse expanded slider; second tap: hide controls.
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture {
-                    withAnimation { showControls = false }
+                    if showExpandedSlider {
+                        withAnimation { showExpandedSlider = false }
+                    } else {
+                        withAnimation { showControls = false }
+                    }
                 }
 
             VStack(spacing: 0) {
@@ -181,6 +219,11 @@ struct ReaderView: View {
                 topBar
 
                 Spacer()
+
+                // Expanded slider (above bottom bar)
+                if showExpandedSlider, totalPages > 1 {
+                    expandedSliderView
+                }
 
                 // Bottom bar
                 bottomBar
@@ -241,8 +284,39 @@ struct ReaderView: View {
     }
 
     // MARK: - Bottom Bar
+    // MARK: - Expanded Slider (above bottom bar)
+    private var expandedSliderView: some View {
+        HStack(spacing: 8) {
+            Text("\(currentPage + 1)")
+                .font(.caption.monospacedDigit())
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+
+            Slider(
+                value: Binding(
+                    get: { Double(currentPage) },
+                    set: { currentPage = Int($0) }
+                ),
+                in: 0...Double(max(0, totalPages - 1)),
+                step: 1
+            )
+            .tint(settings.settings.theme.accentColor)
+            .layoutPriority(-1)
+
+            Text("\(totalPages)")
+                .font(.caption.monospacedDigit())
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .background(.regularMaterial)
+    }
+
+    // MARK: - Bottom Bar
     private var bottomBar: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 0) {
+            // Left: TOC button
             Button {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
                     showTOC = true
@@ -252,43 +326,70 @@ struct ReaderView: View {
                 Image(systemName: "list.bullet")
                     .font(.body.weight(.semibold))
                     .foregroundColor(settings.settings.theme.accentColor)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 32, height: 32)
             }
             .accessibilityLabel("目录")
 
-            // Page slider
+            Spacer()
+
+            // Center: Progress indicator button
             if totalPages > 1 {
-                HStack(spacing: 0) {
-//                    Text("\(currentPage + 1)")
-//                        .font(.caption.monospacedDigit())
-//                        .foregroundColor(.secondary)
-//                        .frame(width: 28)
-
-                    Slider(
-                        value: Binding(
-                            get: { Double(currentPage) },
-                            set: { currentPage = Int($0) }
-                        ),
-                        in: 0...Double(max(0, totalPages - 1)),
-                        step: 1
-                    )
-                    .tint(settings.settings.theme.accentColor)
-
-//                    Text("\(totalPages)")
-//                        .font(.caption.monospacedDigit())
-//                        .foregroundColor(.secondary)
-//                        .frame(width: 28)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showExpandedSlider.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "slider.horizontal.3")
+                            .font(.caption)
+                        Text("\(currentPage + 1)/\(totalPages)")
+                            .font(.caption.monospacedDigit())
+                    }
+                    .foregroundColor(settings.settings.theme.accentColor)
                 }
-                .padding(.horizontal, 8)
             }
 
             Spacer()
+
+            // Right: Page jump input
+            if totalPages > 1 {
+                HStack(spacing: 4) {
+                    TextField("页码", text: $jumpToPageText)
+                        .keyboardType(.numberPad)
+                        .font(.caption)
+                        .multilineTextAlignment(.center)
+                        .frame(width: 52)
+                        .textFieldStyle(.roundedBorder)
+
+                    Button {
+                        jumpToEnteredPage()
+                    } label: {
+                        Text("前往")
+                            .font(.caption.weight(.medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule()
+                                    .fill(Color.accentColor)
+                            )
+                    }
+                }
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 6)
-//        .padding(.bottom, 12)
         .background(.regularMaterial)
         .background(.shadow(.drop(color: .black.opacity(0.06), radius: 4, y: -2)))
+    }
+
+    private func jumpToEnteredPage() {
+        guard let entered = Int(jumpToPageText), totalPages > 0 else { return }
+        // User enters 1-based page number; convert to 0-indexed
+        let target = max(1, min(entered, totalPages)) - 1
+        currentPage = target
+        jumpToPageText = ""
+        showExpandedSlider = false
     }
 
     // MARK: - Settings Panel Overlay
@@ -312,6 +413,78 @@ struct ReaderView: View {
         )
         .transition(.move(edge: .bottom).combined(with: .opacity))
         .zIndex(2)
+    }
+
+    // MARK: - Footnote Back Button
+    private var footnoteBackButton: some View {
+        VStack {
+            Spacer()
+            HStack {
+                Spacer()
+                Button {
+                    dismissFootnoteBack()
+                    NotificationCenter.default.post(
+                        name: .footnoteGoBack,
+                        object: nil
+                    )
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.caption.weight(.semibold))
+                        Text("返回原文")
+                            .font(.subheadline.weight(.medium))
+                    }
+                    .foregroundColor(.primary)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule()
+                            .fill(.ultraThinMaterial)
+                            .shadow(color: .black.opacity(0.1), radius: 8, y: 4)
+                    )
+                }
+                Spacer()
+            }
+            .padding(.bottom, 80)
+        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+    }
+
+    private func showFootnoteReturn() {
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            showFootnoteBack = true
+        }
+        footnoteBackTimer?.invalidate()
+        footnoteBackTimer = Timer.scheduledTimer(withTimeInterval: 10, repeats: false) { [weak footnoteBackTimer] _ in
+            footnoteBackTimer?.invalidate()
+            withAnimation(.easeInOut(duration: 0.3)) {
+                showFootnoteBack = false
+            }
+        }
+    }
+
+    private func dismissFootnoteBack() {
+        footnoteBackTimer?.invalidate()
+        footnoteBackTimer = nil
+        withAnimation(.easeInOut(duration: 0.3)) {
+            showFootnoteBack = false
+        }
+    }
+
+    // MARK: - Chapter Title Mapping
+    /// Look up the chapter title that corresponds to a spine index using href matching.
+    /// The NCX TOC and OPF spine are populated from different sources — they can differ
+    /// in length and ordering. Using direct index lookup causes wrong titles.
+    private func chapterTitle(forSpineIndex index: Int) -> String {
+        guard index >= 0, index < book.spine.count else { return "" }
+        let spineHref = book.spine[index]
+        // Strip any fragment (#...) for comparison
+        let cleanHref = spineHref.components(separatedBy: "#").first ?? spineHref
+        let matched = chapters.first { ch in
+            let chClean = ch.href.components(separatedBy: "#").first ?? ch.href
+            return chClean == cleanHref
+        }
+        return matched?.title ?? ""
     }
 
     // MARK: - Page Navigation
@@ -361,6 +534,19 @@ struct ReaderView: View {
         )
     }
 
+    // MARK: - Reading Time Tracking
+    private func startTracking() {
+        sessionStart = Date()
+    }
+
+    private func stopAndSaveTracking() {
+        guard let start = sessionStart else { return }
+        let duration = Date().timeIntervalSince(start)
+        sessionStart = nil
+        guard duration > 0 else { return }
+        readingStatsManager.addSession(bookId: book.id, duration: duration)
+    }
+
     // MARK: - Theme color scheme
     private var colorSchemeForTheme: ColorScheme? {
         switch settings.settings.theme {
@@ -374,6 +560,8 @@ struct ReaderView: View {
 extension Notification.Name {
     static let goToPage = Notification.Name("goToPage")
     static let updateSettings = Notification.Name("updateSettings")
+    static let footnoteGoBack = Notification.Name("footnoteGoBack")
+    static let showFootnoteBack = Notification.Name("showFootnoteBack")
 }
 
 // MARK: - Reading Settings Store (ObservableObject wrapper)
@@ -433,8 +621,10 @@ struct BookWebView: UIViewRepresentable {
         let script = WKUserScript(source: source, injectionTime: .atDocumentEnd, forMainFrameOnly: true)
         config.userContentController.addUserScript(script)
         config.userContentController.add(context.coordinator, name: "pageHandler")
+        config.userContentController.add(context.coordinator, name: "footnoteHandler")
 
         let webView = WKWebView(frame: .zero, configuration: config)
+        context.coordinator.webView = webView
         webView.navigationDelegate = context.coordinator
         // Pagination is driven entirely by JS (container.scrollLeft); disable the
         // native scroll view so it doesn't bounce/interfere with the tap zones.
@@ -522,6 +712,7 @@ struct BookWebView: UIViewRepresentable {
         var lastSettings: ReadingSettings?
         var pendingPage: Int = 0
         var imageInlineBudget = 0   // bytes left for base64-inlining images this load
+        weak var webView: WKWebView?
 
         var currentPageBinding: Binding<Int>?
         var totalPagesBinding: Binding<Int>?
@@ -531,6 +722,18 @@ struct BookWebView: UIViewRepresentable {
 
         init(_ parent: BookWebView) {
             self.parent = parent
+            super.init()
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleFootnoteGoBack),
+                name: .footnoteGoBack,
+                object: nil
+            )
+        }
+
+        @objc private func handleFootnoteGoBack() {
+            guard let wv = webView else { return }
+            wv.evaluateJavaScript("goBackFromFootnote();", completionHandler: nil)
         }
 
         // MARK: - Load Content
@@ -914,7 +1117,8 @@ struct BookWebView: UIViewRepresentable {
 
             hr { margin: 20px 0; border: none; border-top: 1px solid \(textColor)22; }
 
-            a { color: \(textColor); text-decoration: underline; }
+            a { color: \(textColor); text-decoration: none; }
+            u { text-decoration: none; }
             </style>
             <script>
             var DEFAULTS = \(defaultsJSON);
@@ -943,11 +1147,29 @@ struct BookWebView: UIViewRepresentable {
                 c.style.webkitColumnGap = (padL + padR) + 'px';
                 pageStep = c.clientWidth;
                 if (pageStep < 1) { pageStep = 1; }
+                // Snap content height to a whole number of lines so the
+                // top/bottom of every column aligns with a line boundary.
+                snapToLineHeight(c, cs);
                 var sw = c.scrollWidth; // forces synchronous reflow
                 totalPages = Math.max(1, Math.round(sw / pageStep));
                 if (currentPage > totalPages - 1) { currentPage = totalPages - 1; }
                 if (currentPage < 0) { currentPage = 0; }
                 computeChapterMetrics();
+            }
+
+            function snapToLineHeight(c, cs) {
+                var padTop = parseFloat(cs.paddingTop) || 0;
+                var padBottom = parseFloat(cs.paddingBottom) || 0;
+                var contentHeight = c.clientHeight - padTop - padBottom;
+                var lh = parseFloat(cs.lineHeight);
+                if (!lh || lh <= 0) { return; }
+                var lines = Math.floor(contentHeight / lh);
+                if (lines < 1) { lines = 1; }
+                var snapped = lines * lh;
+                var slack = contentHeight - snapped;
+                if (slack > 0.5) {
+                    c.style.paddingBottom = (padBottom + slack) + 'px';
+                }
             }
 
             function applyScroll() {
@@ -972,10 +1194,13 @@ struct BookWebView: UIViewRepresentable {
                 chapterMetrics = [];
                 var chunks = document.querySelectorAll('.content-chunk');
                 if (!chunks.length) { return; }
+                var c = readerContainer();
+                var containerRect = c.getBoundingClientRect();
                 for (var i = 0; i < chunks.length; i++) {
-                    var chunk = chunks[i];
-                    var startPage = Math.max(0, Math.round((chunk.offsetLeft || 0) / pageStep));
-                    chapterMetrics.push({ pageOffset: startPage, pageCount: 1 });
+                    var rect = chunks[i].getBoundingClientRect();
+                    var xInContainer = rect.left - containerRect.left + c.scrollLeft;
+                    var startPage = Math.max(0, Math.round(xInContainer / pageStep));
+                    chapterMetrics.push({ pageOffset: startPage, pageCount: 1, spineIndex: i });
                 }
                 for (var j = 0; j < chapterMetrics.length; j++) {
                     var nextStart = (j + 1 < chapterMetrics.length) ? chapterMetrics[j + 1].pageOffset : totalPages;
@@ -1011,6 +1236,88 @@ struct BookWebView: UIViewRepresentable {
 
             function nextPage() { goToPage(currentPage + 1); }
             function previousPage() { goToPage(currentPage - 1); }
+
+            // ---- Footnote jump & back navigation ----
+            var footnotePageStack = [];
+
+            function findPageOfElement(el) {
+                var c = readerContainer();
+                if (!c) return 0;
+                var rect = el.getBoundingClientRect();
+                var containerRect = c.getBoundingClientRect();
+                var xInContainer = rect.left - containerRect.left + c.scrollLeft;
+                var page = Math.floor(xInContainer / pageStep);
+                return Math.max(0, Math.min(page, totalPages - 1));
+            }
+
+            function jumpToFootnoteTarget(targetId) {
+                var target = document.getElementById(targetId);
+                if (!target) {
+                    // Also try to find by name attribute (older EPUB convention)
+                    var named = document.querySelector('[name=\"' + targetId + '\"]');
+                    if (!named) { return false; }
+                    target = named;
+                }
+                var targetPage = findPageOfElement(target);
+                if (targetPage === currentPage) { return false; }
+                footnotePageStack.push(currentPage);
+                goToPage(targetPage);
+                return true;
+            }
+
+            function goBackFromFootnote() {
+                if (!footnotePageStack.length) { return; }
+                var backPage = footnotePageStack.pop();
+                goToPage(backPage);
+            }
+
+            // Intercept clicks on <a> links for footnote navigation.
+            // Capturing phase (true) ensures we catch clicks even on <img> or <sup>
+            // children inside the <a>.
+            document.addEventListener('click', function(e) {
+                var a = e.target.closest('a');
+                if (!a) return;
+                var href = a.getAttribute('href');
+                // EPUB3 footnote references: epub:type="noteref" or role="doc-noteref"
+                var isFootnote = a.getAttribute('epub:type') === 'noteref'
+                              || a.getAttribute('role') === 'doc-noteref';
+
+                var fragment = null;
+                if (href) {
+                    var hashIdx = href.indexOf('#');
+                    if (hashIdx === 0) {
+                        // Plain fragment: "#note1"
+                        fragment = href.substring(1);
+                        isFootnote = true;
+                    } else if (hashIdx > 0) {
+                        // Cross-chapter reference: "chapter28.xhtml#note1"
+                        fragment = href.substring(hashIdx + 1);
+                        isFootnote = true;
+                    }
+                }
+
+                // Also treat <a> with an inline <img> child (common footnote icon pattern)
+                // as a potential footnote — the <img> alt text is often "注" or similar.
+                if (!isFootnote && a.querySelector('img')) {
+                    var hasHash = href && href.indexOf('#') >= 0;
+                    if (hasHash) { isFootnote = true; }
+                }
+
+                if (!isFootnote) return;
+                e.preventDefault();
+                e.stopPropagation();
+
+                // Try to resolve the fragment to a DOM element
+                var targetId = fragment || '';
+                if (targetId && jumpToFootnoteTarget(targetId)) {
+                    try {
+                        window.webkit.messageHandlers.footnoteHandler.postMessage({
+                            fromPage: footnotePageStack[footnotePageStack.length - 1],
+                            toPage: currentPage
+                        });
+                    } catch (err) {}
+                }
+            }, true);
 
             function recalculatePages() {
                 measure();
@@ -1099,6 +1406,17 @@ struct BookWebView: UIViewRepresentable {
 
         // MARK: - WKScriptMessageHandler
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if message.name == "footnoteHandler" {
+                DispatchQueue.main.async { [weak self] in
+                    // Tell the ReaderView to show the back button
+                    NotificationCenter.default.post(
+                        name: .showFootnoteBack,
+                        object: nil
+                    )
+                }
+                return
+            }
+
             guard message.name == "pageHandler",
                   let body = message.body as? [String: Any],
                   let type = body["type"] as? String else { return }
@@ -1122,22 +1440,44 @@ struct BookWebView: UIViewRepresentable {
                     DispatchQueue.main.async { [weak self] in
                         guard let self = self else { return }
                         self.activeChapterIndexBinding?.wrappedValue = activeIndex
-                        if let titleBinding = self.chapterTitleBinding,
-                           activeIndex >= 0,
-                           activeIndex < self.parent.book.chapters.count {
-                            titleBinding.wrappedValue = self.parent.book.chapters[activeIndex].title
+                        if let titleBinding = self.chapterTitleBinding {
+                            let book = self.parent.book
+                            if activeIndex >= 0, activeIndex < book.spine.count {
+                                let spineHref = book.spine[activeIndex]
+                                // Strip fragment (#...) for matching
+                                let cleanHref = spineHref.components(separatedBy: "#").first ?? spineHref
+                                let matched = book.chapters.first { ch in
+                                    let chClean = ch.href.components(separatedBy: "#").first ?? ch.href
+                                    return chClean == cleanHref
+                                }
+                                titleBinding.wrappedValue = matched?.title ?? ""
+                            }
                         }
                     }
                 }
             } else if type == "chapterMetrics" {
-                guard let chapters = body["chapters"] as? [[String: Any]] else { return }
+                guard let jsMetrics = body["chapters"] as? [[String: Any]] else { return }
                 DispatchQueue.main.async { [weak self] in
                     guard let self = self else { return }
-                    let metrics = chapters.map { chapter in
-                        ChapterMetric(
-                            pageOffset: chapter["pageOffset"] as? Int ?? 0,
-                            pageCount: chapter["pageCount"] as? Int ?? 1
-                        )
+                    let book = self.parent.book
+                    // Map spine-based JS metrics to NCX-based chapters using href matching
+                    var updatedChapters = book.chapters
+                    for jsM in jsMetrics {
+                        let spineIdx = jsM["spineIndex"] as? Int ?? 0
+                        guard spineIdx >= 0, spineIdx < book.spine.count else { continue }
+                        let spineHref = book.spine[spineIdx]
+                        let cleanHref = spineHref.components(separatedBy: "#").first ?? spineHref
+                        if let chIdx = updatedChapters.firstIndex(where: { ch in
+                            let chClean = ch.href.components(separatedBy: "#").first ?? ch.href
+                            return chClean == cleanHref
+                        }) {
+                            updatedChapters[chIdx].pageOffset = jsM["pageOffset"] as? Int ?? 0
+                            updatedChapters[chIdx].pageCount = jsM["pageCount"] as? Int ?? 1
+                        }
+                    }
+                    // Build metrics in the same order as chapters for the binding
+                    let metrics = updatedChapters.map { ch in
+                        ChapterMetric(pageOffset: ch.pageOffset, pageCount: ch.pageCount)
                     }
                     self.chapterMetricsBinding?.wrappedValue = metrics
                 }
